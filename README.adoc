@@ -1,0 +1,278 @@
+= aloli-cr-deploy
+:toc: left
+:toc-title: Table des matières
+:toclevels: 3
+:source-highlighter: rouge
+:icons: font
+
+Shard Crystal pour le déploiement d'applications https://kemalcr.com[Kemal] sur serveurs FreeBSD.
+Style Capistrano : `releases/`, `current/`, `shared/`.
+Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
+
+== Fonctionnalités
+
+* Déploiement SSH depuis votre terminal local — aucune dépendance côté serveur
+* Structure Capistrano : `releases/`, `current/`, `shared/`
+* Génération dynamique du script `rc.d` FreeBSD (avec `daemon(8)` et redémarrage automatique)
+* Génération dynamique du `nginx.conf` (mode pkg FreeBSD ou Passenger dans `/opt`)
+* Dialogue interactif pour construire le `.env` lors de l'initialisation
+* Création automatique de l'utilisateur PostgreSQL et de la base de données
+* Création du CNAME OVH via l'API REST
+* Rollback en une commande
+* Conservation des N dernières releases (configurable)
+* Compilation Crystal dans une session `tmux` (résistante aux coupures SSH)
+
+== Installation
+
+Ajoutez le shard dans votre `shard.yml` :
+
+[source,yaml]
+----
+dependencies:
+  aloli-cr-deploy:
+    github: aloli/aloli-cr-deploy
+    branch: developpement
+----
+
+Puis compilez le binaire `deploy` :
+
+[source,sh]
+----
+shards install
+crystal build src/deploy.cr --release -o bin/deploy
+----
+
+Ajoutez `bin/deploy` à votre `.gitignore` si vous ne souhaitez pas versionner le binaire.
+
+== Configuration
+
+Copiez le fichier d'exemple dans votre projet :
+
+[source,sh]
+----
+cp lib/aloli-cr-deploy/config/deploy.yml config/deploy.yml
+----
+
+Puis adaptez `config/deploy.yml` :
+
+[source,yaml]
+----
+app_name: mon-app                              # <1>
+repo_url: git@github.com:aloli/mon-app.git
+crystal_main: src/mon_app.cr
+keep_releases: 10
+
+environments:
+  developpement:
+    branch: developpement
+    host: fiona.aloli.net
+    user: deploy
+    app_url: https://dev.mon-app.aloli.app
+    dns_subdomain: dev.mon-app                 # <2>
+    dns_target: fiona.aloli.net.
+
+  production:
+    branch: production
+    host: toby.aloli.net
+    user: deploy
+    app_url: https://mon-app.aloli.app
+
+env_vars:
+  - key: SESSION_SECRET
+    label: "SESSION_SECRET"
+    generate: hex32
+  - key: APP_URL
+    label: "APP_URL"
+    default_from: app_url
+  - key: DATABASE_URL
+    label: "DATABASE_URL"
+    build_from_pg: true
+  - key: UNIX_SOCKET
+    label: "UNIX_SOCKET"
+    default_from: socket_path
+
+ovh:
+  dns_zone: aloli.app
+----
+<1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--developpement`
+<2> Optionnel — nécessite un fichier `config/.ovhrc` avec les clés API OVH
+
+== Utilisation
+
+=== Initialisation du serveur (une seule fois)
+
+[source,sh]
+----
+bin/deploy --developpement init
+----
+
+Cette commande :
+
+. Vérifie la connexion SSH
+. Propose un dialogue pour configurer le DNS OVH (optionnel)
+. Construit le fichier `.env` de façon interactive
+. Sur le serveur : crée l'utilisateur `deploy`, les répertoires, le `.env`, le `nginx.conf`
+
+=== Déploiement
+
+[source,sh]
+----
+bin/deploy --developpement deploy
+bin/deploy --production deploy
+----
+
+Chaque déploiement :
+
+. Clone la branche dans `releases/<timestamp>/`
+. Lie `shared/.env` et `shared/log/`
+. Compile le binaire Crystal en mode `--release` (dans `tmux` si disponible)
+. Bascule le lien `current` vers la nouvelle release
+. Installe/met à jour le script `rc.d`
+. Démarre le service
+. Recharge NGINX
+. Supprime les anciennes releases (au-delà de `keep_releases`)
+
+=== Rollback
+
+[source,sh]
+----
+bin/deploy --production rollback
+----
+
+=== Statut
+
+[source,sh]
+----
+bin/deploy --developpement status
+----
+
+== Structure sur le serveur
+
+[source]
+----
+/home/mon-app--developpement/
+├── releases/
+│   ├── 20260304_143022/          ← release horodatée
+│   │   ├── bin/mon-app--developpement
+│   │   └── ...
+│   └── 20260301_091500/
+├── current -> releases/20260304_143022/
+└── shared/
+    ├── .env                      ← persistant entre les deploys
+    ├── nginx.conf                ← généré par init
+    └── log/
+
+/var/run/mon-app/
+├── developpement.pid
+└── developpement.sock            ← socket Unix (deploy:www 660)
+
+/usr/local/etc/rc.d/mon-app--developpement
+/usr/local/bin/mon-app--developpement -> current/bin/...
+----
+
+== NGINX
+
+Le fichier `shared/nginx.conf` est généré lors de l'`init`.
+Il est automatiquement lié selon le mode détecté :
+
+[cols="1,2,2"]
+|===
+| Mode | Lien créé | Directive à ajouter dans nginx.conf principal
+
+| Passenger (`/opt/websites/` présent)
+| `/opt/websites/mon-app--developpement.conf`
+| `include /opt/websites/*.conf;`
+
+| pkg FreeBSD
+| `sites-enabled/mon-app--developpement`
+| `include sites-enabled/*;`
+|===
+
+Le socket Unix est créé avec les permissions `deploy:www 660` pour que NGINX
+(qui tourne sous l'utilisateur `www`) puisse y accéder.
+
+== DNS OVH (optionnel)
+
+Créez le fichier `config/.ovhrc` (non versionné, permissions 600) :
+
+[source,sh]
+----
+OVH_APP_KEY=votre_app_key
+OVH_APP_SECRET=votre_app_secret
+OVH_CONSUMER_KEY=votre_consumer_key
+----
+
+=== Génération des clés OVH
+
+**Étape 1** — Créez l'application sur https://eu.api.ovh.com/createApp/
+
+**Étape 2** — Générez le Consumer Key :
+
+[source,sh]
+----
+curl -X POST https://eu.api.ovh.com/1.0/auth/credential \
+  -H 'Content-Type: application/json' \
+  -H 'X-Ovh-Application: VOTRE_APP_KEY' \
+  -d '{
+    "accessRules": [
+      {"method": "GET",  "path": "/domain/zone/aloli.app"},
+      {"method": "GET",  "path": "/domain/zone/aloli.app/record"},
+      {"method": "POST", "path": "/domain/zone/aloli.app/record"},
+      {"method": "POST", "path": "/domain/zone/aloli.app/refresh"}
+    ],
+    "redirection": "https://www.ovhcloud.com/fr/"
+  }'
+----
+
+Ouvrez la `validationUrl` retournée dans votre navigateur pour valider.
+
+== GitHub Actions
+
+Pour un déploiement automatique depuis GitHub Actions, générez une clé SSH dédiée :
+
+[source,sh]
+----
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/deploy_ed25519 -N ""
+# Ajoutez la clé publique dans ~/.ssh/authorized_keys sur le serveur
+ssh-copy-id -i ~/.ssh/deploy_ed25519.pub deploy@votre-serveur.net
+----
+
+Ajoutez la clé privée dans les secrets GitHub (`DEPLOY_SSH_KEY`), puis :
+
+[source,yaml]
+----
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [production]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+
+      - name: Build deploy binary
+        run: |
+          shards install
+          crystal build src/deploy.cr --release -o bin/deploy
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H votre-serveur.net >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        run: bin/deploy --production deploy
+----
+
+== Licence
+
+MIT — voir link:LICENSE[LICENSE]

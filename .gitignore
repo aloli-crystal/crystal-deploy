@@ -1,0 +1,7 @@
+/bin/
+/.shards/
+/lib/
+*.dwarf
+
+# Fichiers de configuration sensibles (non versionnés)
+config/.ovhrc

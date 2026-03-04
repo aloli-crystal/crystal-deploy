@@ -1,0 +1,94 @@
+# =============================================================================
+# config/deploy.yml — Configuration du déploiement
+# Copiez ce fichier dans votre projet Crystal et adaptez-le.
+# =============================================================================
+
+# Nom de l'application (utilisé pour les répertoires, services, binaires)
+app_name: mon-app
+
+# Dépôt Git source
+repo_url: git@github.com:aloli/mon-app.git
+
+# Fichier source Crystal principal (relatif à la racine du projet)
+crystal_main: src/mon_app.cr
+
+# Flags de compilation Crystal supplémentaires (optionnel)
+# crystal_flags: "-D use_pg"
+
+# Nombre de releases à conserver
+keep_releases: 10
+
+# Environnements de déploiement
+environments:
+  developpement:
+    branch: developpement
+    host: fiona.aloli.net
+    user: deploy
+    app_url: https://dev.mon-app.aloli.app
+    dns_subdomain: dev.mon-app
+    dns_target: fiona.aloli.net.
+
+  production:
+    branch: production
+    host: toby.aloli.net
+    user: deploy
+    app_url: https://mon-app.aloli.app
+    dns_subdomain: mon-app
+    dns_target: toby.aloli.net.
+
+# Variables d'environnement demandées lors du dialogue init
+# Chaque entrée : clé, label affiché, valeur par défaut (optionnel), secret (masque la saisie)
+env_vars:
+  - key: SESSION_SECRET
+    label: "SESSION_SECRET"
+    generate: hex32          # génère automatiquement si vide : hex32 | base64_20
+
+  - key: APP_URL
+    label: "APP_URL"
+    default_from: app_url    # reprend app_url de l'environnement courant
+
+  - key: DATABASE_URL
+    label: "DATABASE_URL (postgresql://user:pass@host/db)"
+    # Construit automatiquement depuis les champs pg_* si absent
+    build_from_pg: true
+
+  - key: UNIX_SOCKET
+    label: "UNIX_SOCKET"
+    default_from: socket_path  # /var/run/{app_name}/{env}.sock
+
+  - key: STRIPE_SECRET_KEY
+    label: "STRIPE_SECRET_KEY"
+    optional: true
+
+  - key: PAYPAL_CLIENT_ID
+    label: "PAYPAL_CLIENT_ID"
+    optional: true
+
+  - key: PAYPAL_SECRET
+    label: "PAYPAL_SECRET"
+    optional: true
+    secret: true
+
+  - key: TWILIO_ACCOUNT_SID
+    label: "TWILIO_ACCOUNT_SID"
+    optional: true
+
+  - key: TWILIO_AUTH_TOKEN
+    label: "TWILIO_AUTH_TOKEN"
+    optional: true
+    secret: true
+
+  - key: TWILIO_FROM
+    label: "TWILIO_FROM (ex: +33600000000)"
+    optional: true
+
+  - key: BREVO_API_KEY
+    label: "BREVO_API_KEY"
+    optional: true
+    secret: true
+
+# Configuration OVH DNS (optionnel)
+# Les clés sont stockées dans config/.ovhrc (non versionné)
+ovh:
+  dns_zone: aloli.app
+  api_url: https://eu.api.ovh.com/1.0
