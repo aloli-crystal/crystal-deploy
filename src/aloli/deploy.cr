@@ -8,9 +8,12 @@ require "./deploy/commands/deploy"
 require "./deploy/commands/init"
 require "./deploy/commands/rollback"
 require "./deploy/commands/status"
+require "./deploy/commands/generate_ci"
+require "./deploy/generators/github_workflow"
 require "./deploy/generators/nginx"
 require "./deploy/generators/rcd"
 require "./deploy/ssh/client"
+require "./deploy/ssh/remote_script"
 require "./deploy/ssh/remote_runner"
 
 module Aloli

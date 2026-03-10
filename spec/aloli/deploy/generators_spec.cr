@@ -33,7 +33,7 @@ describe Aloli::Deploy::Generators::Nginx do
     config, env = sample_config_and_env
     gen = Aloli::Deploy::Generators::Nginx.new(config, env)
     content = gen.generate
-    content.should contain("server unix:/var/run/mon-app/developpement.sock")
+    content.should contain("server unix:/tmp/.mon-app--developpement.sock")
   end
 
   it "inclut le bloc HTTPS commenté" do

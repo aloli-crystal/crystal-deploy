@@ -21,6 +21,7 @@ Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 * Rollback en une commande
 * Conservation des N dernières releases (configurable)
 * Compilation Crystal dans une session `tmux` (résistante aux coupures SSH)
+* Génération automatique du workflow GitHub Actions (CI/CD) via `generate-ci`
 
 == Installation
 
@@ -43,6 +44,8 @@ crystal build src/deploy.cr --release -o bin/deploy
 ----
 
 Ajoutez `bin/deploy` à votre `.gitignore` si vous ne souhaitez pas versionner le binaire.
+
+NOTE: Le binaire `deploy` doit être compilé dans votre projet (pas dans le shard). Il lit `config/deploy.yml` depuis le répertoire courant.
 
 == Configuration
 
@@ -99,11 +102,37 @@ ovh:
 
 == Utilisation
 
+=== Génération du workflow GitHub Actions
+
+[source,sh]
+----
+bin/deploy generate-ci
+----
+
+Cette commande génère `.github/workflows/deploy.yml`, un workflow complet qui :
+
+. Lance les tests sur chaque push
+. Déploie automatiquement sur staging à chaque push sur la branche `developpement`
+. Déploie automatiquement sur production à chaque push sur la branche `production`
+
+Le workflow utilise deux secrets GitHub à configurer dans les paramètres du dépôt :
+
+[cols="1,3"]
+|===
+| Secret | Description
+
+| `SSH_PRIVATE_KEY`
+| Clé SSH privée pour se connecter au serveur de déploiement
+
+| `SSH_HOST`
+| Adresse du serveur (ex: `fiona.aloli.net`)
+|===
+
 === Initialisation du serveur (une seule fois)
 
 [source,sh]
 ----
-bin/deploy --developpement init
+bin/deploy init --developpement
 ----
 
 Cette commande :
@@ -117,8 +146,8 @@ Cette commande :
 
 [source,sh]
 ----
-bin/deploy --developpement deploy
-bin/deploy --production deploy
+bin/deploy deploy --developpement
+bin/deploy deploy --production
 ----
 
 Chaque déploiement :
@@ -136,14 +165,14 @@ Chaque déploiement :
 
 [source,sh]
 ----
-bin/deploy --production rollback
+bin/deploy rollback --production
 ----
 
 === Statut
 
 [source,sh]
 ----
-bin/deploy --developpement status
+bin/deploy status --developpement
 ----
 
 == Structure sur le serveur
@@ -162,9 +191,8 @@ bin/deploy --developpement status
     ├── nginx.conf                ← généré par init
     └── log/
 
-/var/run/mon-app/
-├── developpement.pid
-└── developpement.sock            ← socket Unix (deploy:www 660)
+/tmp/.mon-app--developpement.pid   ← pidfile (convention /tmp comme PostgreSQL)
+/tmp/.mon-app--developpement.sock  ← socket Unix (deploy:www 660)
 
 /usr/local/etc/rc.d/mon-app--developpement
 /usr/local/bin/mon-app--developpement -> current/bin/...
@@ -226,52 +254,45 @@ curl -X POST https://eu.api.ovh.com/1.0/auth/credential \
 
 Ouvrez la `validationUrl` retournée dans votre navigateur pour valider.
 
-== GitHub Actions
+== GitHub Actions (CI/CD automatique)
 
-Pour un déploiement automatique depuis GitHub Actions, générez une clé SSH dédiée :
+La commande `generate-ci` génère automatiquement le fichier de workflow adapté à votre configuration.
+
+=== Étape 1 — Générer la clé SSH dédiée
 
 [source,sh]
 ----
 ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/deploy_ed25519 -N ""
-# Ajoutez la clé publique dans ~/.ssh/authorized_keys sur le serveur
+# Autoriser la clé publique sur le serveur
 ssh-copy-id -i ~/.ssh/deploy_ed25519.pub deploy@votre-serveur.net
 ----
 
-Ajoutez la clé privée dans les secrets GitHub (`DEPLOY_SSH_KEY`), puis :
+=== Étape 2 — Configurer les secrets GitHub
 
-[source,yaml]
+Dans les paramètres du dépôt GitHub → *Settings → Secrets and variables → Actions* :
+
+[cols="1,3"]
+|===
+| Secret | Valeur
+
+| `SSH_PRIVATE_KEY`
+| Contenu de `~/.ssh/deploy_ed25519` (clé privée)
+
+| `SSH_HOST`
+| Adresse du serveur (ex: `fiona.aloli.net`)
+|===
+
+=== Étape 3 — Générer le workflow
+
+[source,sh]
 ----
-# .github/workflows/deploy.yml
-name: Deploy
-
-on:
-  push:
-    branches: [production]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Crystal
-        uses: crystal-lang/install-crystal@v1
-
-      - name: Build deploy binary
-        run: |
-          shards install
-          crystal build src/deploy.cr --release -o bin/deploy
-
-      - name: Setup SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H votre-serveur.net >> ~/.ssh/known_hosts
-
-      - name: Deploy
-        run: bin/deploy --production deploy
+bin/deploy generate-ci
+git add .github/workflows/deploy.yml
+git commit -m "ci: ajouter le workflow de déploiement automatique"
+git push
 ----
+
+Le workflow généré déclenche automatiquement un déploiement à chaque push sur les branches `developpement` (staging) et `production`.
 
 == Licence
 

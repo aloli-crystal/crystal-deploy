@@ -4,23 +4,22 @@ module Aloli
       include Logger
 
       USAGE = <<-USAGE
-        Usage : deploy --<env> [commande]
-
-        Options :
-          --<env>     Nom de l'environnement défini dans config/deploy.yml
-                      Exemples : --developpement, --production, --dev
+        Usage : deploy [commande] [--<env>]
 
         Commandes :
           init        Initialisation du serveur (une seule fois, idempotente)
           deploy      Déploiement d'une nouvelle release (défaut)
           rollback    Retour à la release précédente
           status      Afficher la version active et les releases disponibles
+          generate-ci Générer le fichier de workflow GitHub Actions (.github/workflows/deploy.yml)
+
+        Options :
+          --<env>     Nom de l'environnement (défaut: dev). Ex: --production
 
         Exemples :
-          deploy --developpement init
-          deploy --production deploy
-          deploy --production rollback
-          deploy --dev status
+          deploy generate-ci
+          deploy init --developpement
+          deploy deploy --production
         USAGE
 
       def self.run(args : Array(String))
@@ -28,22 +27,24 @@ module Aloli
       end
 
       def run(args : Array(String))
-        if args.empty? || args.first == "--help" || args.first == "-h"
+        if args.empty? || args.includes?("--help") || args.includes?("-h")
           puts USAGE
           exit 0
         end
 
-        # Résolution de l'environnement (premier argument : --env-name)
-        env_arg = args.shift
-        unless env_arg.starts_with?("--")
-          STDERR.puts "Erreur : le premier argument doit être --<environnement>".colorize(:red)
-          puts USAGE
-          exit 1
+        # Commande spéciale sans environnement
+        if args.first == "generate-ci"
+          config = Config.load
+          Commands::GenerateCI.new(config).run
+          exit 0
         end
-        env_name = env_arg.lstrip('-')
 
-        # Commande (deuxième argument, défaut : deploy)
-        command = args.shift? || "deploy"
+        # Commande (premier argument, défaut : deploy)
+        command = args.find { |arg| !arg.starts_with?("-") } || "deploy"
+        
+        # Résolution de l'environnement (argument --env, défaut : dev)
+        env_arg = args.find { |arg| arg.starts_with?("--") } || "--developpement"
+        env_name = env_arg.lstrip('-')
 
         # Chargement de la configuration
         config = Config.load
@@ -62,7 +63,7 @@ module Aloli
           Commands::Status.new(config, env).run
         else
           STDERR.puts "Commande inconnue : #{command}".colorize(:red)
-          STDERR.puts "Commandes disponibles : init, deploy, rollback, status".colorize(:yellow)
+          STDERR.puts "Commandes disponibles : init, deploy, rollback, status, generate-ci".colorize(:yellow)
           exit 1
         end
       end
