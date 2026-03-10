@@ -13,7 +13,8 @@ module Aloli
 
           <<-YAML
           # Fichier généré par aloli-cr-deploy. Ne pas modifier manuellement.
-          name: CI/CD - Déploiement continu
+          # Pour regénérer : bin/deploy generate-ci
+          name: CI/CD — Déploiement continu
 
           on:
             push:
@@ -22,23 +23,48 @@ module Aloli
                 - #{prod_env}
 
           jobs:
+            # ─────────────────────────────────────────────────────────────────
+            # Job 1 : Tests
+            # ─────────────────────────────────────────────────────────────────
             test:
               runs-on: ubuntu-latest
-              container:
-                image: crystallang/crystal:latest-alpine
+
+              services:
+                postgres:
+                  image: postgres:16-alpine
+                  env:
+                    POSTGRES_USER: runner
+                    POSTGRES_PASSWORD: ""
+                    POSTGRES_HOST_AUTH_METHOD: trust
+                  ports:
+                    - 5432:5432
+                  options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+
               steps:
                 - name: Checkout
                   uses: actions/checkout@v4
+
+                - name: Installation de Crystal
+                  uses: crystal-lang/install-crystal@v1
+
                 - name: Installation des dépendances
                   run: shards install
+
                 - name: Lancement des tests
-                  run: | # Le service DB doit être démarré dans le workflow de test
-                    apk add --no-cache postgresql-client
-                    # Assurez-vous d'avoir un service postgres dans votre workflow
-                    # ou utilisez une base de données de test externe.
-                    # export DATABASE_URL=...
+                  env:
+                    DATABASE_URL: postgresql://runner@localhost:5432/#{@config.app_name.gsub("-", "_")}__test
+                  run: |
+                    psql -U runner -h localhost -c "CREATE DATABASE #{@config.app_name.gsub("-", "_")}__test;"
+                    psql -U runner -h localhost #{@config.app_name.gsub("-", "_")}__test -f db/schema_pg.sql
                     crystal spec
 
+            # ─────────────────────────────────────────────────────────────────
+            # Job 2 : Déploiement (uniquement si les tests passent)
+            # ─────────────────────────────────────────────────────────────────
             deploy:
               needs: test
               runs-on: ubuntu-latest
@@ -55,7 +81,7 @@ module Aloli
                   run: shards install
 
                 - name: Compilation du binaire de déploiement
-                  run: crystal build src/deploy.cr -o bin/deploy
+                  run: crystal build lib/aloli-cr-deploy/src/deploy.cr --release -o bin/deploy
 
                 - name: Configuration de SSH
                   uses: webfactory/ssh-agent@v0.9.0
@@ -67,11 +93,11 @@ module Aloli
 
                 - name: Déploiement sur Staging
                   if: github.ref == 'refs/heads/#{dev_env}'
-                  run: bin/deploy --#{dev_env} deploy
+                  run: bin/deploy deploy --#{dev_env}
 
                 - name: Déploiement sur Production
                   if: github.ref == 'refs/heads/#{prod_env}'
-                  run: bin/deploy --#{prod_env} deploy
+                  run: bin/deploy deploy --#{prod_env}
           YAML
         end
       end
