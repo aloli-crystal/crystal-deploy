@@ -25,9 +25,14 @@ module Aloli
         "/home/#{full_name(app_name)}"
       end
 
-      # Chemin du socket Unix par défaut
+      # Chemin du socket Unix par défaut (convention /tmp comme PostgreSQL)
       def socket_path(app_name : String) : String
-        "/var/run/#{app_name}/#{name}.sock"
+        "/tmp/.#{full_name(app_name)}.sock"
+      end
+
+      # Chemin du pidfile
+      def pid_path(app_name : String) : String
+        "/tmp/.#{full_name(app_name)}.pid"
       end
 
       # Nom du service rc.d (tirets → underscores)

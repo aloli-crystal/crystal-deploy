@@ -62,6 +62,7 @@ module Aloli
 
               location /css/    { alias #{app_home}/current/public/css/;    expires 30d; add_header Cache-Control "public, immutable"; }
               location /js/     { alias #{app_home}/current/public/js/;     expires 30d; add_header Cache-Control "public, immutable"; }
+              location /images/ { alias #{app_home}/current/public/images/; expires 30d; add_header Cache-Control "public, immutable"; }
               location /vendor/ { alias #{app_home}/current/public/vendor/; expires 30d; add_header Cache-Control "public, immutable"; }
           }
 

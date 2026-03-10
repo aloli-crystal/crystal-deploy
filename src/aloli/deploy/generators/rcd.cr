@@ -44,7 +44,7 @@ module Aloli
           rcvar="#{rc_name}_enable"
 
           #{rc_name}_user="deploy"
-          #{rc_name}_pidfile="/var/run/#{@config.app_name}/#{@env.name}.pid"
+          #{rc_name}_pidfile="/tmp/.#{full_name}.pid"
           #{rc_name}_socket="#{socket_path}"
           #{rc_name}_log="#{app_home}/shared/log/#{full_name}.log"
 
@@ -56,9 +56,6 @@ module Aloli
 
           #{rc_name}_start() {
               echo "Démarrage de ${name}..."
-
-              # Créer le répertoire du pidfile si absent
-              install -d -o deploy -g www -m 750 "/var/run/#{@config.app_name}"
 
               # Supprimer l'ancien socket si présent (arrêt brutal précédent)
               rm -f "${#{rc_name}_socket}"

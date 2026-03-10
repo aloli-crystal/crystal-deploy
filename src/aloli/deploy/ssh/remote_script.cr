@@ -77,7 +77,6 @@ module Aloli
             sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}"
             sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/log"
             sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/db"
-            sudo install -d -o "${APP_USER}" -g www -m 750 "/var/run/${APP_NAME}"
             log_info "Répertoires créés."
           }
 
@@ -100,14 +99,20 @@ module Aloli
           init_rcd() {
             log_section "Script rc.d"
             RCD_SRC="${CURRENT_LINK}/config/rc.d.${APP_FULL_NAME}"
-            RCD_DEST="/usr/local/etc/rc.d/${SERVICE_NAME}"
+            RCD_SHARED="${SHARED_DIR}/rc.d.${APP_FULL_NAME}"
+            RCD_LINK="/usr/local/etc/rc.d/${SERVICE_NAME}"
             if [ ! -f "${RCD_SRC}" ]; then
               log_warn "Script rc.d introuvable : ${RCD_SRC}"
               log_warn "Lancez d'abord un premier deploy, puis relancez init."
               return 0
             fi
-            sudo install -m 755 -o root -g wheel "${RCD_SRC}" "${RCD_DEST}"
-            log_info "Script rc.d installé : ${RCD_DEST}"
+            # Copier dans shared/ (survit aux rollbacks)
+            sudo install -m 755 -o root -g wheel "${RCD_SRC}" "${RCD_SHARED}"
+            log_info "Script rc.d copié dans shared/ : ${RCD_SHARED}"
+            # Créer le lien symbolique (supprimer l'existant)
+            sudo rm -f "${RCD_LINK}"
+            sudo ln -s "${RCD_SHARED}" "${RCD_LINK}"
+            log_info "Lien symbolique créé : ${RCD_LINK} → ${RCD_SHARED}"
             if ! grep -q "${SERVICE_RC_NAME}_enable" /etc/rc.conf 2>/dev/null; then
               printf "\n# ${APP_FULL_NAME} — ajouté par deploy le %s\n" "$(date)" \
                 | sudo tee -a /etc/rc.conf >/dev/null
@@ -190,27 +195,37 @@ module Aloli
             log_info "Mode NGINX : ${NGINX_MODE} | Conf : ${NGINX_CONF_DIR:-inconnu}"
 
             # Lire APP_URL et UNIX_SOCKET depuis le .env
+            _NEW_SOCKET="/tmp/.${APP_FULL_NAME}.sock"
             SERVER_NAME="${APP_FULL_NAME}.aloli.app"
-            SOCKET_PATH="/var/run/${APP_NAME}/${ENV_NAME}.sock"
+            SOCKET_PATH="${_NEW_SOCKET}"
             if [ -f "${SHARED_DIR}/.env" ]; then
               APP_URL_RAW=$(grep '^APP_URL=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
               APP_URL_CLEAN=$(printf '%s' "${APP_URL_RAW}" | sed 's|^https://||' | sed 's|^http://||')
               [ -n "${APP_URL_CLEAN}" ] && SERVER_NAME="${APP_URL_CLEAN}"
               SOCKET_ENV=$(grep '^UNIX_SOCKET=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
-              [ -n "${SOCKET_ENV}" ] && SOCKET_PATH="${SOCKET_ENV}"
+              # Ignorer l'ancien chemin /var/run/ (migration automatique)
+              case "${SOCKET_ENV}" in
+                /var/run/*) : ;; # ancien chemin ignoré
+                *) [ -n "${SOCKET_ENV}" ] && SOCKET_PATH="${SOCKET_ENV}" ;;
+              esac
             fi
 
-            # Vérification cohérence socket
-            EXPECTED_SOCKET="/var/run/${APP_NAME}/${ENV_NAME}.sock"
-            if [ -f "${SHARED_DIR}/.env" ] && [ "${SOCKET_PATH}" != "${EXPECTED_SOCKET}" ]; then
-              log_warn "INCOHÉRENCE SOCKET : .env=${SOCKET_PATH} | rc.d attendu=${EXPECTED_SOCKET}"
-              log_warn "Corrigez : sudo sed -i '' 's|^UNIX_SOCKET=.*|UNIX_SOCKET=${EXPECTED_SOCKET}|' ${SHARED_DIR}/.env"
+            # Générer nginx.conf si absent ou si le socket a changé
+            _NGINX_NEEDS_REGEN=0
+            if [ ! -f "${NGINX_CONF_DEST}" ]; then
+              _NGINX_NEEDS_REGEN=1
+            elif [ -f "${NGINX_CONF_DEST}" ]; then
+              _CURRENT_SOCKET=$(grep 'server unix:' "${NGINX_CONF_DEST}" 2>/dev/null | sed 's/.*server unix://;s/;.*//' | tr -d ' ')
+              if [ -n "${_CURRENT_SOCKET}" ] && [ "${_CURRENT_SOCKET}" != "${SOCKET_PATH}" ]; then
+                log_warn "Socket nginx.conf (${_CURRENT_SOCKET}) diffère du socket actuel (${SOCKET_PATH}). Régénération..."
+                sudo rm -f "${NGINX_CONF_DEST}"
+                _NGINX_NEEDS_REGEN=1
+              else
+                log_info "nginx.conf déjà présent et cohérent. Supprimez-le pour régénérer : sudo rm ${NGINX_CONF_DEST}"
+              fi
             fi
 
-            # Générer nginx.conf si absent
-            if [ -f "${NGINX_CONF_DEST}" ]; then
-              log_info "nginx.conf déjà présent. Supprimez-le pour régénérer : sudo rm ${NGINX_CONF_DEST}"
-            else
+            if [ "${_NGINX_NEEDS_REGEN}" = "1" ]; then
               sudo tee "${NGINX_CONF_DEST}" >/dev/null << NGINX_CONF
           # Configuration NGINX — ${APP_FULL_NAME}
           # Généré par aloli-cr-deploy le $(date)
@@ -240,6 +255,7 @@ module Aloli
 
               location /css/    { alias ${APP_HOME}/current/public/css/;    expires 30d; add_header Cache-Control "public, immutable"; }
               location /js/     { alias ${APP_HOME}/current/public/js/;     expires 30d; add_header Cache-Control "public, immutable"; }
+              location /images/ { alias ${APP_HOME}/current/public/images/; expires 30d; add_header Cache-Control "public, immutable"; }
               location /vendor/ { alias ${APP_HOME}/current/public/vendor/; expires 30d; add_header Cache-Control "public, immutable"; }
           }
 
@@ -344,8 +360,8 @@ module Aloli
               sudo service "${SERVICE_RC_NAME}" stop || true
               sleep 2
             }
-            PIDFILE="/var/run/${APP_NAME}/${ENV_NAME}.pid"
-            SOCKFILE="/var/run/${APP_NAME}/${ENV_NAME}.sock"
+            PIDFILE="/tmp/.${APP_FULL_NAME}.pid"
+            SOCKFILE="/tmp/.${APP_FULL_NAME}.sock"
             [ -f "${PIDFILE}" ] && { sudo rm -f "${PIDFILE}"; log_info "Pidfile résiduel supprimé."; }
             { [ -S "${SOCKFILE}" ] || [ -e "${SOCKFILE}" ]; } && \
               { sudo rm -f "${SOCKFILE}"; log_info "Socket résiduel supprimé."; }
