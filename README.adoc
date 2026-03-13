@@ -22,6 +22,7 @@ Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 * Conservation des N dernières releases (configurable)
 * Compilation Crystal dans une session `tmux` (résistante aux coupures SSH)
 * Génération automatique du workflow GitHub Actions (CI/CD) via `generate-ci`
+* **Arrêt gracieux** (zero-downtime) : SIGTERM + attente de fin des requêtes avant bascule
 
 == Installation
 
@@ -155,11 +156,32 @@ Chaque déploiement :
 . Clone la branche dans `releases/<timestamp>/`
 . Lie `shared/.env` et `shared/log/`
 . Compile le binaire Crystal en mode `--release` (dans `tmux` si disponible)
+. **Arrêt gracieux** de l'ancienne version (SIGTERM + attente de fin des requêtes)
 . Bascule le lien `current` vers la nouvelle release
 . Installe/met à jour le script `rc.d`
-. Démarre le service
+. Démarre la nouvelle version
 . Recharge NGINX
 . Supprime les anciennes releases (au-delà de `keep_releases`)
+
+=== Arrêt gracieux (zero-downtime)
+
+Lors de chaque déploiement, le script envoie `SIGTERM` au processus en cours et attend
+qu'il se termine proprement avant de basculer vers la nouvelle release.
+Les requêtes HTTP en cours ne sont pas interrompues.
+
+Le timeout d'attente est configurable via la variable d'environnement `GRACEFUL_TIMEOUT`
+(défaut : 30 secondes). Au-delà, un `SIGKILL` est envoyé en dernier recours.
+
+Pour que l'application bénéficie de l'arrêt gracieux, elle doit intercepter `SIGTERM`
+et appeler `Kemal.stop` (ou `HTTP::Server#close`) :
+
+[source,crystal]
+----
+Signal::TERM.trap do
+  STDERR.puts "[SHUTDOWN] SIGTERM reçu — arrêt gracieux en cours..."
+  spawn { Kemal.stop rescue nil }
+end
+----
 
 === Rollback
 

@@ -353,18 +353,69 @@ module Aloli
             log_info "Binaire compilé : ${RELEASE_DIR}/bin/${APP_FULL_NAME}"
           }
 
-          activate_release() {
-            log_section "Activation de la release ${TIMESTAMP}"
-            sudo service "${SERVICE_RC_NAME}" status >/dev/null 2>&1 && {
-              log_info "Arrêt du service..."
-              sudo service "${SERVICE_RC_NAME}" stop || true
-              sleep 2
-            }
+          # ---------------------------------------------------------------------------
+          # Arrêt gracieux : envoie SIGTERM au processus courant et attend que
+          # le socket Unix disparaisse (signe que toutes les requêtes en cours
+          # ont été terminées). Timeout configurable via GRACEFUL_TIMEOUT (défaut 30s).
+          # ---------------------------------------------------------------------------
+          GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-30}"
+
+          graceful_stop() {
             PIDFILE="/tmp/.${APP_FULL_NAME}.pid"
             SOCKFILE="/tmp/.${APP_FULL_NAME}.sock"
+
+            # Vérifier si le service est actif
+            sudo service "${SERVICE_RC_NAME}" status >/dev/null 2>&1 || {
+              log_info "Service déjà arrêté."
+              return 0
+            }
+
+            # Lire le PID depuis le pidfile
+            OLD_PID=""
+            [ -f "${PIDFILE}" ] && OLD_PID=$(cat "${PIDFILE}" 2>/dev/null | tr -d '[:space:]')
+
+            if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
+              log_info "Arrêt gracieux du processus PID ${OLD_PID} (SIGTERM)..."
+              sudo kill -TERM "${OLD_PID}" 2>/dev/null || true
+
+              # Attendre que le socket disparaisse (signe que le serveur a fini)
+              WAIT=0
+              while [ "${WAIT}" -lt "${GRACEFUL_TIMEOUT}" ]; do
+                sleep 1; WAIT=$((WAIT + 1))
+                # Le processus est-il encore vivant ?
+                kill -0 "${OLD_PID}" 2>/dev/null || {
+                  log_info "Processus terminé après ${WAIT}s."
+                  break
+                }
+                [ $((WAIT % 5)) -eq 0 ] && \
+                  log_info "  En attente de la fin des requêtes en cours (${WAIT}s/${GRACEFUL_TIMEOUT}s)..."
+              done
+
+              # Timeout dépassé : SIGKILL en dernier recours
+              if kill -0 "${OLD_PID}" 2>/dev/null; then
+                log_warn "Timeout gracieux dépassé (${GRACEFUL_TIMEOUT}s). Envoi de SIGKILL..."
+                sudo kill -KILL "${OLD_PID}" 2>/dev/null || true
+                sleep 1
+              fi
+            else
+              log_info "Aucun processus actif trouvé. Arrêt via rc.d..."
+              sudo service "${SERVICE_RC_NAME}" stop || true
+              sleep 2
+            fi
+
+            # Nettoyage des fichiers résiduels
             [ -f "${PIDFILE}" ] && { sudo rm -f "${PIDFILE}"; log_info "Pidfile résiduel supprimé."; }
             { [ -S "${SOCKFILE}" ] || [ -e "${SOCKFILE}" ]; } && \
               { sudo rm -f "${SOCKFILE}"; log_info "Socket résiduel supprimé."; }
+          }
+
+          activate_release() {
+            log_section "Activation de la release ${TIMESTAMP}"
+
+            # Étape 1 : arrêt gracieux de l'ancienne version
+            graceful_stop
+
+            # Étape 2 : basculer le lien current vers la nouvelle release
             sudo ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
             sudo chown -h "${APP_USER}:${APP_GROUP}" "${CURRENT_LINK}"
             sudo ln -sf "${CURRENT_LINK}/bin/${APP_FULL_NAME}" "${BIN_LINK}"
