@@ -354,15 +354,21 @@ module Aloli
           }
 
           # ---------------------------------------------------------------------------
-          # Arrêt gracieux : envoie SIGTERM au processus courant et attend que
-          # le socket Unix disparaisse (signe que toutes les requêtes en cours
-          # ont été terminées). Timeout configurable via GRACEFUL_TIMEOUT (défaut 30s).
+          # Arrêt gracieux : envoie SIGTERM au processus Crystal (PID enfant) et
+          # attend sa mort avant de basculer la release.
+          # Timeout configurable via GRACEFUL_TIMEOUT dans .env (défaut 30s).
+          #
+          # Architecture double pidfile (amélioration A) :
+          #   PIDFILE_PARENT : PID du superviseur daemon(8) — ne pas envoyer SIGTERM ici
+          #                    (avec -r, SIGTERM sur le daemon relance l'enfant)
+          #   PIDFILE_CHILD  : PID de l'application Crystal — cible de SIGTERM
           # ---------------------------------------------------------------------------
           GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-30}"
 
           graceful_stop() {
-            PIDFILE="/tmp/.${APP_FULL_NAME}.pid"
-            SOCKFILE="/tmp/.${APP_FULL_NAME}.sock"
+            PIDFILE_PARENT="/tmp/.${APP_FULL_NAME}.pid"
+            PIDFILE_CHILD="/tmp/.${APP_FULL_NAME}.child.pid"
+            SOCKFILE="${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
 
             # Vérifier si le service est actif
             sudo service "${SERVICE_RC_NAME}" status >/dev/null 2>&1 || {
@@ -370,21 +376,43 @@ module Aloli
               return 0
             }
 
-            # Lire le PID depuis le pidfile
-            OLD_PID=""
-            [ -f "${PIDFILE}" ] && OLD_PID=$(cat "${PIDFILE}" 2>/dev/null | tr -d '[:space:]')
+            # Étape 1 : arrêter le superviseur daemon(8) pour désactiver le
+            # redémarrage automatique (-r) avant d'envoyer SIGTERM à l'enfant.
+            DAEMON_PID=""
+            [ -f "${PIDFILE_PARENT}" ] && \
+              DAEMON_PID=$(cat "${PIDFILE_PARENT}" 2>/dev/null | tr -d '[:space:]')
+            if [ -n "${DAEMON_PID}" ] && kill -0 "${DAEMON_PID}" 2>/dev/null; then
+              log_info "Arrêt du superviseur daemon(8) PID ${DAEMON_PID}..."
+              sudo kill -TERM "${DAEMON_PID}" 2>/dev/null || true
+            fi
 
-            if [ -n "${OLD_PID}" ] && kill -0 "${OLD_PID}" 2>/dev/null; then
-              log_info "Arrêt gracieux du processus PID ${OLD_PID} (SIGTERM)..."
-              sudo kill -TERM "${OLD_PID}" 2>/dev/null || true
+            # Étape 2 : lire le PID enfant (application Crystal)
+            CHILD_PID=""
+            [ -f "${PIDFILE_CHILD}" ] && \
+              CHILD_PID=$(cat "${PIDFILE_CHILD}" 2>/dev/null | tr -d '[:space:]')
 
-              # Attendre que le socket disparaisse (signe que le serveur a fini)
+            if [ -n "${CHILD_PID}" ] && kill -0 "${CHILD_PID}" 2>/dev/null; then
+              # Amélioration C : vérifier que le PID correspond bien à notre binaire
+              # (protection contre réutilisation de PID après un crash)
+              PROC_NAME=$(ps -o comm= -p "${CHILD_PID}" 2>/dev/null | tr -d '[:space:]' || true)
+              EXPECTED_NAME=$(basename "${APP_FULL_NAME}")
+              if [ -n "${PROC_NAME}" ] && [ "${PROC_NAME}" != "${EXPECTED_NAME}" ]; then
+                log_warn "PID ${CHILD_PID} appartient à '${PROC_NAME}' (attendu '${EXPECTED_NAME}')."
+                log_warn "Le pidfile est probablement périmé. Nettoyage sans SIGTERM."
+                CHILD_PID=""
+              fi
+            fi
+
+            if [ -n "${CHILD_PID}" ] && kill -0 "${CHILD_PID}" 2>/dev/null; then
+              log_info "Arrêt gracieux de l'application PID ${CHILD_PID} (SIGTERM)..."
+              sudo kill -TERM "${CHILD_PID}" 2>/dev/null || true
+
+              # Attendre la mort du processus enfant
               WAIT=0
               while [ "${WAIT}" -lt "${GRACEFUL_TIMEOUT}" ]; do
                 sleep 1; WAIT=$((WAIT + 1))
-                # Le processus est-il encore vivant ?
-                kill -0 "${OLD_PID}" 2>/dev/null || {
-                  log_info "Processus terminé après ${WAIT}s."
+                kill -0 "${CHILD_PID}" 2>/dev/null || {
+                  log_info "Application terminée après ${WAIT}s."
                   break
                 }
                 [ $((WAIT % 5)) -eq 0 ] && \
@@ -392,21 +420,30 @@ module Aloli
               done
 
               # Timeout dépassé : SIGKILL en dernier recours
-              if kill -0 "${OLD_PID}" 2>/dev/null; then
+              if kill -0 "${CHILD_PID}" 2>/dev/null; then
                 log_warn "Timeout gracieux dépassé (${GRACEFUL_TIMEOUT}s). Envoi de SIGKILL..."
-                sudo kill -KILL "${OLD_PID}" 2>/dev/null || true
+                sudo kill -KILL "${CHILD_PID}" 2>/dev/null || true
+                # Amélioration C : vérifier que SIGKILL a bien terminé le processus
                 sleep 1
+                if kill -0 "${CHILD_PID}" 2>/dev/null; then
+                  log_error "Impossible de tuer le processus ${CHILD_PID} (processus en état D ?)."
+                  log_error "Intervention manuelle requise avant de continuer."
+                  exit 1
+                fi
+                log_warn "Processus ${CHILD_PID} tué par SIGKILL."
               fi
             else
-              log_info "Aucun processus actif trouvé. Arrêt via rc.d..."
+              log_info "Aucun processus enfant actif trouvé. Arrêt via rc.d..."
               sudo service "${SERVICE_RC_NAME}" stop || true
               sleep 2
             fi
 
-            # Nettoyage des fichiers résiduels
-            [ -f "${PIDFILE}" ] && { sudo rm -f "${PIDFILE}"; log_info "Pidfile résiduel supprimé."; }
+            # Amélioration B : supprimer le socket EN DERNIER, après la mort du processus,
+            # pour éviter les 502 Bad Gateway sur les requêtes en cours dans NGINX.
+            sudo rm -f "${PIDFILE_CHILD}" && log_info "Pidfile enfant supprimé."
+            sudo rm -f "${PIDFILE_PARENT}" && log_info "Pidfile superviseur supprimé."
             { [ -S "${SOCKFILE}" ] || [ -e "${SOCKFILE}" ]; } && \
-              { sudo rm -f "${SOCKFILE}"; log_info "Socket résiduel supprimé."; }
+              { sudo rm -f "${SOCKFILE}"; log_info "Socket supprimé."; }
           }
 
           activate_release() {
