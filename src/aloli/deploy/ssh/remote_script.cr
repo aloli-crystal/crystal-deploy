@@ -43,6 +43,10 @@ module Aloli
           SERVICE_RC_NAME=$(printf '%s' "${APP_FULL_NAME}" | tr '-' '_')
           TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
           RELEASE_DIR="${RELEASES_DIR}/${TIMESTAMP}"
+          GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-30}"
+
+          # Verrou de déploiement : évite deux déploiements simultanés
+          LOCKFILE="/tmp/.deploy-${APP_FULL_NAME}.lock"
 
           GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
           log_info()    { printf "${GREEN}[INFO]${NC}  %s\n" "$1"; }
@@ -54,6 +58,28 @@ module Aloli
             [ "$(id -u)" -eq 0 ] && { log_error "Ne pas exécuter en root direct."; exit 1; }
             command -v sudo >/dev/null 2>&1 || { log_error "sudo introuvable : pkg install sudo"; exit 1; }
             sudo -v 2>/dev/null || { log_error "Droits sudo insuffisants."; exit 1; }
+          }
+
+          # ---------------------------------------------------------------------------
+          # Verrou de déploiement (amélioration F)
+          # Empêche deux déploiements simultanés (ex : deux pushes rapides sur CI).
+          # Le verrou est automatiquement supprimé à la fin du script (trap EXIT).
+          # ---------------------------------------------------------------------------
+          acquire_lock() {
+            if [ -f "${LOCKFILE}" ]; then
+              LOCK_PID=$(cat "${LOCKFILE}" 2>/dev/null | tr -d '[:space:]')
+              if [ -n "${LOCK_PID}" ] && kill -0 "${LOCK_PID}" 2>/dev/null; then
+                log_error "Déploiement déjà en cours (PID ${LOCK_PID}). Abandon."
+                log_error "  Si c'est une erreur : sudo rm -f ${LOCKFILE}"
+                exit 1
+              else
+                log_warn "Verrou résiduel détecté (PID ${LOCK_PID:-inconnu} mort). Nettoyage."
+                sudo rm -f "${LOCKFILE}"
+              fi
+            fi
+            echo $$ | sudo tee "${LOCKFILE}" >/dev/null
+            trap 'sudo rm -f "${LOCKFILE}"' EXIT INT TERM
+            log_info "Verrou acquis (PID $$)."
           }
 
           # ==========================================================================
@@ -217,8 +243,7 @@ module Aloli
             elif [ -f "${NGINX_CONF_DEST}" ]; then
               _CURRENT_SOCKET=$(grep 'server unix:' "${NGINX_CONF_DEST}" 2>/dev/null | sed 's/.*server unix://;s/;.*//' | tr -d ' ')
               if [ -n "${_CURRENT_SOCKET}" ] && [ "${_CURRENT_SOCKET}" != "${SOCKET_PATH}" ]; then
-                log_warn "Socket nginx.conf (${_CURRENT_SOCKET}) diffère du socket actuel (${SOCKET_PATH}). Régénération..."
-                sudo rm -f "${NGINX_CONF_DEST}"
+                log_warn "Socket changé (${_CURRENT_SOCKET} → ${SOCKET_PATH}). Régénération de nginx.conf."
                 _NGINX_NEEDS_REGEN=1
               else
                 log_info "nginx.conf déjà présent et cohérent. Supprimez-le pour régénérer : sudo rm ${NGINX_CONF_DEST}"
@@ -363,8 +388,6 @@ module Aloli
           #                    (avec -r, SIGTERM sur le daemon relance l'enfant)
           #   PIDFILE_CHILD  : PID de l'application Crystal — cible de SIGTERM
           # ---------------------------------------------------------------------------
-          GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-30}"
-
           graceful_stop() {
             PIDFILE_PARENT="/tmp/.${APP_FULL_NAME}.pid"
             PIDFILE_CHILD="/tmp/.${APP_FULL_NAME}.child.pid"
@@ -443,7 +466,7 @@ module Aloli
             sudo rm -f "${PIDFILE_CHILD}" && log_info "Pidfile enfant supprimé."
             sudo rm -f "${PIDFILE_PARENT}" && log_info "Pidfile superviseur supprimé."
             { [ -S "${SOCKFILE}" ] || [ -e "${SOCKFILE}" ]; } && \
-              { sudo rm -f "${SOCKFILE}"; log_info "Socket supprimé."; }
+              { sudo rm -f "${SOCKFILE}"; log_info "Socket supprimé."; } || true
           }
 
           activate_release() {
@@ -497,6 +520,8 @@ module Aloli
 
           # ==========================================================================
           # ROLLBACK
+          # Utilise également l'arrêt gracieux pour ne pas interrompre les requêtes
+          # en cours lors d'un retour arrière.
           # ==========================================================================
           rollback() {
             log_section "Rollback"
@@ -504,8 +529,10 @@ module Aloli
             PREV_RELEASE=$(ls -1t "${RELEASES_DIR}" | grep -v "^${CURRENT_RELEASE}$" | head -1)
             [ -z "${PREV_RELEASE}" ] && { log_error "Aucune release précédente disponible."; exit 1; }
             log_warn "Rollback : ${CURRENT_RELEASE} → ${PREV_RELEASE}"
-            sudo service "${SERVICE_RC_NAME}" stop || true
-            sleep 2
+
+            # Arrêt gracieux de la version actuelle avant de basculer
+            graceful_stop
+
             sudo ln -sfn "${RELEASES_DIR}/${PREV_RELEASE}" "${CURRENT_LINK}"
             sudo ln -sf "${CURRENT_LINK}/bin/${APP_FULL_NAME}" "${BIN_LINK}"
             sudo service "${SERVICE_RC_NAME}" start
@@ -526,6 +553,8 @@ module Aloli
             done
             printf "\nService %s : " "${SERVICE_RC_NAME}"
             sudo service "${SERVICE_RC_NAME}" status 2>/dev/null || printf "inactif\n"
+            printf "\nVerrou de déploiement : "
+            [ -f "${LOCKFILE}" ] && printf "ACTIF (PID %s)\n" "$(cat ${LOCKFILE})" || printf "libre\n"
           }
 
           # ==========================================================================
@@ -545,6 +574,7 @@ module Aloli
               ;;
             deploy)
               check_sudo
+              acquire_lock
               [ ! -d "${SHARED_DIR}" ] && { log_error "Lancez d'abord : deploy --${ENV_NAME} init"; exit 1; }
               [ ! -f "${SHARED_DIR}/.env" ] && { log_error ".env absent. Lancez init."; exit 1; }
               grep -q "changez_ce_secret" "${SHARED_DIR}/.env" 2>/dev/null && \
@@ -569,6 +599,7 @@ module Aloli
               ;;
             rollback)
               check_sudo
+              acquire_lock
               rollback
               ;;
             status)
