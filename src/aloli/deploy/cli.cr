@@ -14,7 +14,7 @@ module Aloli
           generate-ci Générer le workflow GitHub Actions (.github/workflows/deploy.yml)
 
         Options :
-          --<env>     Nom de l'environnement défini dans config/deploy.yml (défaut: dev)
+          --<env>     Nom de l'environnement défini dans config/deploy.yml (défaut: preproduction)
                       Les raccourcis par préfixe sont supportés :
                         --dev     → premier environnement dont le nom commence par "dev"
                         --prep    → premier environnement dont le nom commence par "prep"
@@ -57,8 +57,8 @@ module Aloli
         # Commande (premier argument, défaut : deploy)
         command = args.find { |arg| !arg.starts_with?("-") } || "deploy"
         
-        # Résolution de l'environnement (argument --env, défaut : dev)
-        env_arg = args.find { |arg| arg.starts_with?("--") } || "--developpement"
+        # Résolution de l'environnement (argument --env, défaut : preproduction)
+        env_arg = args.find { |arg| arg.starts_with?("--") } || "--preproduction"
         env_name = env_arg.lstrip('-')
 
         # Chargement de la configuration
