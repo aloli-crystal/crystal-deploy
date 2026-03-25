@@ -1,3 +1,3 @@
-require "./aloli/deploy"
+require "./crystal_deploy"
 
-Aloli::Deploy::CLI.run(ARGV)
+CrystalDeploy::CLI.run(ARGV)

@@ -33,7 +33,7 @@ Ajoutez le shard dans votre `shard.yml` :
 ----
 dependencies:
   crystal-deploy:
-    github: aloli-crystal/crystal-deploy
+    github: votre-org/crystal-deploy
     branch: developpement
 ----
 
@@ -63,7 +63,7 @@ Puis adaptez `config/deploy.yml` :
 [source,yaml]
 ----
 app_name: mon-app                              # <1>
-repo_url: git@github.com:aloli/mon-app.git
+repo_url: git@github.com:user/mon-app.git
 crystal_main: src/server.cr
 keep_releases: 10
 
@@ -74,17 +74,17 @@ framework: marten                              # <2>
 environments:
   preproduction:
     branch: developpement
-    host: fiona.aloli.net
+    host: deploy.example.com
     user: deploy
-    app_url: https://preprod.mon-app.aloli.app
+    app_url: https://preprod.mon-app.example.app
     dns_subdomain: preprod.mon-app             # <3>
-    dns_target: fiona.aloli.net.
+    dns_target: deploy.example.com.
 
   production:
     branch: production
-    host: toby.aloli.net
+    host: prod.example.com
     user: deploy
-    app_url: https://mon-app.aloli.app
+    app_url: https://mon-app.example.app
 
 # Variables du fichier .env côté serveur
 # Marten :
@@ -125,7 +125,7 @@ env_vars:
 #     default_from: socket_path
 
 ovh:
-  dns_zone: aloli.app
+  dns_zone: example.app
 ----
 <1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--preproduction`
 <2> Valeurs acceptées : `marten` ou `kemal`. Adapte NGINX, migrations, CI et variables `.env`
@@ -409,10 +409,10 @@ curl -X POST https://eu.api.ovh.com/1.0/auth/credential \
   -H 'X-Ovh-Application: VOTRE_APP_KEY' \
   -d '{
     "accessRules": [
-      {"method": "GET",  "path": "/domain/zone/aloli.app"},
-      {"method": "GET",  "path": "/domain/zone/aloli.app/record"},
-      {"method": "POST", "path": "/domain/zone/aloli.app/record"},
-      {"method": "POST", "path": "/domain/zone/aloli.app/refresh"}
+      {"method": "GET",  "path": "/domain/zone/example.app"},
+      {"method": "GET",  "path": "/domain/zone/example.app/record"},
+      {"method": "POST", "path": "/domain/zone/example.app/record"},
+      {"method": "POST", "path": "/domain/zone/example.app/refresh"}
     ],
     "redirection": "https://www.ovhcloud.com/fr/"
   }'
@@ -431,14 +431,14 @@ Pour activer la création automatique du CNAME, ajoutez dans chaque environnemen
 environments:
   preproduction:
     branch: developpement
-    host: fiona.aloli.net
+    host: deploy.example.com
     user: deploy
-    app_url: https://preprod.mon-app.aloli.app
+    app_url: https://preprod.mon-app.example.app
     dns_subdomain: preprod.mon-app   # ← sous-domaine à créer
-    dns_target: fiona.aloli.net.     # ← cible du CNAME (point final obligatoire)
+    dns_target: deploy.example.com.     # ← cible du CNAME (point final obligatoire)
 
 ovh:
-  dns_zone: aloli.app                # ← zone DNS OVH
+  dns_zone: example.app                # ← zone DNS OVH
 ----
 
 == GitHub Actions (CI/CD automatique)

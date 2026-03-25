@@ -1,2 +1,2 @@
 require "spec"
-require "../src/aloli/deploy"
+require "../src/crystal_deploy"

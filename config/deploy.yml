@@ -7,7 +7,7 @@
 app_name: mon-app
 
 # Dépôt Git source
-repo_url: git@github.com:aloli/mon-app.git
+repo_url: git@github.com:user/mon-app.git
 
 # Fichier source Crystal principal (relatif à la racine du projet)
 crystal_main: src/mon_app.cr
@@ -26,27 +26,27 @@ framework: marten
 environments:
   developpement:
     branch: developpement
-    host: fiona.aloli.net
+    host: deploy.example.com
     user: deploy
-    app_url: https://dev.mon-app.aloli.app
+    app_url: https://dev.mon-app.example.app
     dns_subdomain: dev.mon-app
-    dns_target: fiona.aloli.net.
+    dns_target: deploy.example.com.
 
   preproduction:
     branch: developpement
-    host: fiona.aloli.net
+    host: deploy.example.com
     user: deploy
-    app_url: https://preprod.mon-app.aloli.app
+    app_url: https://preprod.mon-app.example.app
     dns_subdomain: preprod.mon-app
-    dns_target: fiona.aloli.net.
+    dns_target: deploy.example.com.
 
   production:
     branch: production
-    host: toby.aloli.net
+    host: prod.example.com
     user: deploy
-    app_url: https://mon-app.aloli.app
+    app_url: https://mon-app.example.app
     dns_subdomain: mon-app
-    dns_target: toby.aloli.net.
+    dns_target: prod.example.com.
 
 # =============================================================================
 # Variables d'environnement demandées lors du dialogue `deploy init`
@@ -79,7 +79,7 @@ env_vars:
     build_from_pg: true
 
   - key: SMTP_HOST
-    label: "Serveur SMTP (ex: smtp.aloli.net)"
+    label: "Serveur SMTP (ex: smtp.example.com)"
     optional: true
 
   - key: SMTP_PORT
@@ -96,7 +96,7 @@ env_vars:
     secret: true
 
   - key: EMAIL_FROM
-    label: "Adresse email expéditeur (ex: noreply@mon-app.aloli.app)"
+    label: "Adresse email expéditeur (ex: noreply@mon-app.example.app)"
     optional: true
 
   - key: STRIPE_SECRET_KEY
@@ -120,7 +120,7 @@ env_vars:
 #     generate: hex32
 #
 #   - key: APP_URL
-#     label: "URL publique de l'application (ex: https://preprod.mon-app.aloli.app)"
+#     label: "URL publique de l'application (ex: https://preprod.mon-app.example.app)"
 #     default_from: app_url
 #
 #   - key: DATABASE_URL
@@ -135,5 +135,5 @@ env_vars:
 # Les clés API OVH sont stockées dans le .env local (non versionné).
 # Utilisez `bin/deploy ovh-setup` pour les générer.
 ovh:
-  dns_zone: aloli.app
+  dns_zone: example.app
   api_url: https://eu.api.ovh.com/1.0
