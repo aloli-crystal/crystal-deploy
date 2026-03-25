@@ -7,6 +7,9 @@ module Aloli
       class Init
         include Logger
 
+        # Chemin du .env local (côté développeur, dans le projet)
+        LOCAL_ENV_PATH = ".env"
+        # Chemin legacy .ovhrc (conservé pour compatibilité ascendante)
         OVH_RC_PATH = "config/.ovhrc"
 
         def initialize(@config : Config, @env : Environment)
@@ -157,6 +160,80 @@ module Aloli
         end
 
         # -----------------------------------------------------------------------
+        # Lecture des clés OVH
+        #
+        # Ordre de priorité :
+        #   1. Variables d'environnement du shell (OVH_APP_KEY, etc.)
+        #   2. Fichier .env local (LOCAL_ENV_PATH)
+        #   3. Fichier .ovhrc legacy (OVH_RC_PATH) — compatibilité ascendante
+        #   4. Dialogue interactif (saisie manuelle)
+        # -----------------------------------------------------------------------
+        private def load_ovh_keys : {String, String, String}
+          app_key = ENV.fetch("OVH_APP_KEY", "")
+          app_secret = ENV.fetch("OVH_APP_SECRET", "")
+          consumer_key = ENV.fetch("OVH_CONSUMER_KEY", "")
+
+          # Source 2 : .env local
+          if (app_key.empty? || app_secret.empty? || consumer_key.empty?) &&
+             File.exists?(LOCAL_ENV_PATH)
+            File.each_line(LOCAL_ENV_PATH) do |line|
+              next if line.starts_with?("#") || line.strip.empty?
+              k, _, v = line.partition("=")
+              case k.strip
+              when "OVH_APP_KEY"      then app_key = v.strip      if app_key.empty?
+              when "OVH_APP_SECRET"   then app_secret = v.strip   if app_secret.empty?
+              when "OVH_CONSUMER_KEY" then consumer_key = v.strip if consumer_key.empty?
+              end
+            end
+          end
+
+          # Source 3 : .ovhrc legacy
+          if (app_key.empty? || app_secret.empty? || consumer_key.empty?) &&
+             File.exists?(OVH_RC_PATH)
+            log_warn "Clés OVH chargées depuis #{OVH_RC_PATH} (legacy)."
+            log_warn "Migrez-les vers votre .env local (OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY)."
+            File.each_line(OVH_RC_PATH) do |line|
+              next if line.starts_with?("#") || line.strip.empty?
+              k, _, v = line.partition("=")
+              case k.strip
+              when "OVH_APP_KEY"      then app_key = v.strip      if app_key.empty?
+              when "OVH_APP_SECRET"   then app_secret = v.strip   if app_secret.empty?
+              when "OVH_CONSUMER_KEY" then consumer_key = v.strip if consumer_key.empty?
+              end
+            end
+          end
+
+          {app_key, app_secret, consumer_key}
+        end
+
+        # Écrit ou met à jour les clés OVH dans le .env local
+        private def save_ovh_keys_to_env(app_key : String, app_secret : String,
+                                          consumer_key : String) : Nil
+          env_path = LOCAL_ENV_PATH
+          existing_lines = File.exists?(env_path) ? File.read_lines(env_path) : [] of String
+
+          # Supprimer les anciennes lignes OVH si présentes
+          ovh_keys = %w[OVH_APP_KEY OVH_APP_SECRET OVH_CONSUMER_KEY]
+          filtered = existing_lines.reject { |l| ovh_keys.any? { |k| l.starts_with?("#{k}=") } }
+
+          # Ajouter un séparateur si le fichier n'est pas vide
+          unless filtered.empty? || filtered.last.strip.empty?
+            filtered << ""
+          end
+
+          filtered << "# Clés API OVH — NE PAS VERSIONNER"
+          filtered << "OVH_APP_KEY=#{app_key}"
+          filtered << "OVH_APP_SECRET=#{app_secret}"
+          filtered << "OVH_CONSUMER_KEY=#{consumer_key}"
+          filtered << ""
+
+          File.write(env_path, filtered.join("\n"))
+          File.chmod(env_path, 0o600)
+          log_local "Clés OVH sauvegardées dans #{env_path} (permissions 600)."
+          log_warn "Vérifiez que #{env_path} est bien dans votre .gitignore !"
+        end
+
+        # -----------------------------------------------------------------------
         # Configuration OVH DNS
         # -----------------------------------------------------------------------
         private def setup_ovh : Nil
@@ -166,10 +243,12 @@ module Aloli
 
           log_section "Configuration DNS OVH"
 
-          if File.exists?(OVH_RC_PATH)
-            log_local "Clés OVH chargées depuis #{OVH_RC_PATH}."
+          app_key, app_secret, consumer_key = load_ovh_keys
+
+          if !app_key.empty? && !app_secret.empty? && !consumer_key.empty?
+            log_local "Clés OVH trouvées."
             return unless confirm?("Créer/vérifier le CNAME #{subdomain}.#{ovh_cfg.dns_zone} → #{target} ?")
-            ovh_create_cname(ovh_cfg, subdomain, target)
+            ovh_create_cname(ovh_cfg, subdomain, target, app_key, app_secret, consumer_key)
             return
           end
 
@@ -182,15 +261,8 @@ module Aloli
           app_secret = ask("OVH Application Secret : ")
           consumer_key = ask("OVH Consumer Key : ")
 
-          File.write(OVH_RC_PATH,
-            "# Clés API OVH — #{@config.app_name}\n" \
-            "# NE PAS VERSIONNER\n\n" \
-            "OVH_APP_KEY=#{app_key}\n" \
-            "OVH_APP_SECRET=#{app_secret}\n" \
-            "OVH_CONSUMER_KEY=#{consumer_key}\n"
-          )
-          File.chmod(OVH_RC_PATH, 0o600)
-          log_local "Clés sauvegardées dans #{OVH_RC_PATH} (permissions 600)."
+          # Sauvegarder dans le .env local (plus dans .ovhrc)
+          save_ovh_keys_to_env(app_key, app_secret, consumer_key)
 
           ovh_create_cname(ovh_cfg, subdomain, target, app_key, app_secret, consumer_key)
         end
@@ -199,23 +271,10 @@ module Aloli
           ovh : OvhConfig,
           subdomain : String,
           target : String,
-          app_key : String = "",
-          app_secret : String = "",
-          consumer_key : String = ""
+          app_key : String,
+          app_secret : String,
+          consumer_key : String
         ) : Nil
-          # Charger depuis .ovhrc si non fourni
-          if app_key.empty? && File.exists?(OVH_RC_PATH)
-            File.each_line(OVH_RC_PATH) do |line|
-              next if line.starts_with?("#") || line.strip.empty?
-              k, _, v = line.partition("=")
-              case k.strip
-              when "OVH_APP_KEY"      then app_key = v.strip
-              when "OVH_APP_SECRET"   then app_secret = v.strip
-              when "OVH_CONSUMER_KEY" then consumer_key = v.strip
-              end
-            end
-          end
-
           log_section "Création CNAME OVH : #{subdomain}.#{ovh.dns_zone} → #{target}"
 
           unless Process.find_executable("curl")
@@ -286,6 +345,9 @@ module Aloli
           puts "Étape 1 — Créez l'application sur : https://eu.api.ovh.com/createApp/"
           puts "Étape 2 — Générez le Consumer Key avec curl (voir README.adoc)"
           puts "Étape 3 — Renseignez les trois clés ci-dessous."
+          puts ""
+          puts "Les clés seront sauvegardées dans votre .env local."
+          puts "Vérifiez que .env est dans votre .gitignore !"
           puts ""
         end
       end

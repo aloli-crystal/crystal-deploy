@@ -5,20 +5,21 @@
 :source-highlighter: rouge
 :icons: font
 
-Shard Crystal pour le déploiement d'applications https://kemalcr.com[Kemal] sur serveurs FreeBSD.
+Shard Crystal pour le déploiement d'applications https://kemalcr.com[Kemal] et https://martenframework.com[Marten] sur serveurs FreeBSD.
 Style Capistrano : `releases/`, `current/`, `shared/`.
 Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 
 == Fonctionnalités
 
 * Déploiement SSH depuis votre terminal local — aucune dépendance côté serveur
+* Support natif **Marten** et **Kemal** via le champ `framework` dans `deploy.yml`
 * Structure Capistrano : `releases/`, `current/`, `shared/`
 * Génération dynamique du script `rc.d` FreeBSD (avec `daemon(8)` et redémarrage automatique)
 * Génération dynamique du `nginx.conf` (mode pkg FreeBSD ou Passenger dans `/opt`)
 * Dialogue interactif pour construire le `.env` lors de l'initialisation
 * Création automatique de l'utilisateur PostgreSQL et de la base de données
-* Création du CNAME OVH via l'API REST
-* Rollback en une commande
+* Création du CNAME OVH via l'API REST (clés lues depuis le `.env`)
+* Rollback en une commande (avec ré-application des migrations Marten)
 * Conservation des N dernières releases (configurable)
 * Compilation Crystal dans une session `tmux` (résistante aux coupures SSH)
 * Génération automatique du workflow GitHub Actions (CI/CD) via `generate-ci`
@@ -41,7 +42,7 @@ Puis compilez le binaire `deploy` :
 [source,sh]
 ----
 shards install
-crystal build src/deploy.cr --release -o bin/deploy
+crystal build lib/crystal-deploy/src/deploy.cr --release -o bin/deploy
 ----
 
 Ajoutez `bin/deploy` à votre `.gitignore` si vous ne souhaitez pas versionner le binaire.
@@ -63,16 +64,20 @@ Puis adaptez `config/deploy.yml` :
 ----
 app_name: mon-app                              # <1>
 repo_url: git@github.com:aloli/mon-app.git
-crystal_main: src/mon_app.cr
+crystal_main: src/server.cr
 keep_releases: 10
 
+# Framework Crystal utilisé : marten | kemal (défaut : kemal)
+# Adapte : variables .env, chemins assets NGINX, migrations, workflow CI
+framework: marten                              # <2>
+
 environments:
-  developpement:
+  preproduction:
     branch: developpement
     host: fiona.aloli.net
     user: deploy
-    app_url: https://dev.mon-app.aloli.app
-    dns_subdomain: dev.mon-app                 # <2>
+    app_url: https://preprod.mon-app.aloli.app
+    dns_subdomain: preprod.mon-app             # <3>
     dns_target: fiona.aloli.net.
 
   production:
@@ -81,25 +86,83 @@ environments:
     user: deploy
     app_url: https://mon-app.aloli.app
 
+# Variables du fichier .env côté serveur
+# Marten :
 env_vars:
-  - key: SESSION_SECRET
-    label: "SESSION_SECRET"
+  - key: SECRET_KEY
+    label: "Clé secrète Marten"
     generate: hex32
-  - key: APP_URL
-    label: "APP_URL"
+  - key: MARTEN_ALLOWED_HOSTS
+    label: "MARTEN_ALLOWED_HOSTS"
     default_from: app_url
-  - key: DATABASE_URL
-    label: "DATABASE_URL"
-    build_from_pg: true
-  - key: UNIX_SOCKET
-    label: "UNIX_SOCKET"
+  - key: MARTEN_SOCKET
+    label: "MARTEN_SOCKET"
     default_from: socket_path
+  - key: DB_HOST
+    label: "DB_HOST"
+  - key: DB_PORT
+    label: "DB_PORT"
+  - key: DB_USER
+    label: "DB_USER"
+  - key: DB_PASSWORD
+    label: "DB_PASSWORD"
+  - key: DB_NAME
+    label: "DB_NAME"
+
+# Kemal (exemple alternatif) :
+# env_vars:
+#   - key: SESSION_SECRET
+#     label: "SESSION_SECRET"
+#     generate: hex32
+#   - key: APP_URL
+#     label: "APP_URL"
+#     default_from: app_url
+#   - key: DATABASE_URL
+#     label: "DATABASE_URL"
+#     build_from_pg: true
+#   - key: UNIX_SOCKET
+#     label: "UNIX_SOCKET"
+#     default_from: socket_path
 
 ovh:
   dns_zone: aloli.app
 ----
-<1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--developpement`
-<2> Optionnel — nécessite un fichier `config/.ovhrc` avec les clés API OVH
+<1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--preproduction`
+<2> Valeurs acceptées : `marten` ou `kemal`. Adapte NGINX, migrations, CI et variables `.env`
+<3> Optionnel — nécessite les clés API OVH dans votre `.env` local (voir section <<dns-ovh>>)
+
+== Support Marten vs Kemal
+
+Le champ `framework` dans `config/deploy.yml` adapte automatiquement le comportement du shard :
+
+[cols="2,3,3"]
+|===
+| Comportement | `framework: kemal` | `framework: marten`
+
+| Variables `.env` NGINX
+| `APP_URL` + `UNIX_SOCKET`
+| `MARTEN_ALLOWED_HOSTS` + `MARTEN_SOCKET`
+
+| Assets NGINX
+| `/css/`, `/js/`, `/images/`, `/vendor/`
+| `/assets/` → `public/assets/`
+
+| Migrations
+| `db/schema_pg.sql` à l'init
+| `marten migrate` avant chaque activation
+
+| Rollback migrations
+| Non applicable
+| `marten migrate` sur la release précédente
+
+| Tests CI
+| `DATABASE_URL` + `schema_pg.sql`
+| `DB_*` + `MARTEN_ENV=test` + `marten migrate`
+
+| Seed
+| `./bin/<app> seed`
+| `./bin/<app> seed` (si commande présente)
+|===
 
 == Utilisation
 
@@ -112,34 +175,22 @@ bin/deploy generate-ci
 
 Cette commande génère `.github/workflows/deploy.yml`, un workflow complet qui :
 
-. Lance les tests sur chaque push
-. Déploie automatiquement sur staging à chaque push sur la branche `developpement`
+. Lance les tests sur chaque push (adapté au framework)
+. Déploie automatiquement sur pré-production à chaque push sur la branche `developpement`
 . Déploie automatiquement sur production à chaque push sur la branche `production`
-
-Le workflow utilise deux secrets GitHub à configurer dans les paramètres du dépôt :
-
-[cols="1,3"]
-|===
-| Secret | Description
-
-| `SSH_PRIVATE_KEY`
-| Clé SSH privée pour se connecter au serveur de déploiement
-
-| `SSH_HOST`
-| Adresse du serveur (ex: `fiona.aloli.net`)
-|===
 
 === Initialisation du serveur (une seule fois)
 
 [source,sh]
 ----
-bin/deploy init --developpement
+bin/deploy init --preproduction
+bin/deploy init --production
 ----
 
 Cette commande :
 
 . Vérifie la connexion SSH
-. Propose un dialogue pour configurer le DNS OVH (optionnel)
+. Propose un dialogue pour configurer le DNS OVH (optionnel, clés lues depuis `.env`)
 . Construit le fichier `.env` de façon interactive
 . Sur le serveur : crée l'utilisateur `deploy`, les répertoires, le `.env`, le `nginx.conf`
 
@@ -147,7 +198,7 @@ Cette commande :
 
 [source,sh]
 ----
-bin/deploy deploy --developpement
+bin/deploy deploy --preproduction
 bin/deploy deploy --production
 ----
 
@@ -156,6 +207,7 @@ Chaque déploiement :
 . Clone la branche dans `releases/<timestamp>/`
 . Lie `shared/.env` et `shared/log/`
 . Compile le binaire Crystal en mode `--release` (dans `tmux` si disponible)
+. **Marten uniquement** : applique les migrations (`marten migrate`)
 . **Arrêt gracieux** de l'ancienne version (SIGTERM + attente de fin des requêtes)
 . Bascule le lien `current` vers la nouvelle release
 . Installe/met à jour le script `rc.d`
@@ -172,8 +224,9 @@ Les requêtes HTTP en cours ne sont pas interrompues.
 Le timeout d'attente est configurable via la variable d'environnement `GRACEFUL_TIMEOUT`
 (défaut : 30 secondes). Au-delà, un `SIGKILL` est envoyé en dernier recours.
 
-Pour que l'application bénéficie de l'arrêt gracieux, elle doit intercepter `SIGTERM`
-et appeler `Kemal.stop` (ou `HTTP::Server#close`) :
+Pour que l'application bénéficie de l'arrêt gracieux, elle doit intercepter `SIGTERM`.
+
+*Kemal :*
 
 [source,crystal]
 ----
@@ -183,6 +236,8 @@ Signal::TERM.trap do
 end
 ----
 
+*Marten :* l'arrêt gracieux est géré nativement par `Marten::Server`.
+
 === Rollback
 
 [source,sh]
@@ -190,21 +245,23 @@ end
 bin/deploy rollback --production
 ----
 
+Pour Marten, les migrations sont ré-appliquées sur la release précédente après le rollback.
+
 === Statut
 
 [source,sh]
 ----
-bin/deploy status --developpement
+bin/deploy status --preproduction
 ----
 
 == Structure sur le serveur
 
 [source]
 ----
-/home/mon-app--developpement/
+/home/mon-app--preproduction/
 ├── releases/
 │   ├── 20260304_143022/          ← release horodatée
-│   │   ├── bin/mon-app--developpement
+│   │   ├── bin/mon-app--preproduction
 │   │   └── ...
 │   └── 20260301_091500/
 ├── current -> releases/20260304_143022/
@@ -213,11 +270,11 @@ bin/deploy status --developpement
     ├── nginx.conf                ← généré par init
     └── log/
 
-/tmp/.mon-app--developpement.pid   ← pidfile (convention /tmp comme PostgreSQL)
-/tmp/.mon-app--developpement.sock  ← socket Unix (deploy:www 660)
+/tmp/.mon-app--preproduction.pid   ← pidfile (convention /tmp comme PostgreSQL)
+/tmp/.mon-app--preproduction.sock  ← socket Unix (deploy:www 660)
 
-/usr/local/etc/rc.d/mon-app--developpement
-/usr/local/bin/mon-app--developpement -> current/bin/...
+/usr/local/etc/rc.d/mon-app--preproduction
+/usr/local/bin/mon-app--preproduction -> current/bin/...
 ----
 
 == NGINX
@@ -230,31 +287,70 @@ Il est automatiquement lié selon le mode détecté :
 | Mode | Lien créé | Directive à ajouter dans nginx.conf principal
 
 | Passenger (`/opt/websites/` présent)
-| `/opt/websites/mon-app--developpement.conf`
+| `/opt/websites/mon-app--preproduction.conf`
 | `include /opt/websites/*.conf;`
 
 | pkg FreeBSD
-| `sites-enabled/mon-app--developpement`
+| `sites-enabled/mon-app--preproduction`
 | `include sites-enabled/*;`
 |===
 
 Le socket Unix est créé avec les permissions `deploy:www 660` pour que NGINX
 (qui tourne sous l'utilisateur `www`) puisse y accéder.
 
+[#dns-ovh]
 == DNS OVH (optionnel)
 
-Créez le fichier `config/.ovhrc` (non versionné, permissions 600) :
+Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation,
+en utilisant l'API REST OVH.
+
+=== Clés OVH dans le `.env` local
+
+Les clés API OVH sont lues depuis votre **`.env` local** (à la racine de votre projet),
+dans cet ordre de priorité :
+
+[cols="1,3"]
+|===
+| Source | Description
+
+| Variables d'environnement shell
+| `export OVH_APP_KEY=...` dans votre shell
+
+| `.env` local (recommandé)
+| Fichier `.env` à la racine du projet — **ne pas versionner**
+
+| `config/.ovhrc` (legacy)
+| Ancien emplacement, conservé pour compatibilité. Un avertissement invite à migrer vers `.env`.
+|===
+
+Ajoutez les trois variables dans votre `.env` local :
 
 [source,sh]
 ----
+# Clés API OVH — NE PAS VERSIONNER
 OVH_APP_KEY=votre_app_key
 OVH_APP_SECRET=votre_app_secret
 OVH_CONSUMER_KEY=votre_consumer_key
 ----
 
+[IMPORTANT]
+====
+Vérifiez que `.env` est bien dans votre `.gitignore` :
+
+[source,sh]
+----
+echo ".env" >> .gitignore
+----
+====
+
+Si les clés sont absentes du `.env`, le dialogue interactif les demande lors de l'`init`
+et les sauvegarde automatiquement dans votre `.env` local.
+
 === Génération des clés OVH
 
 **Étape 1** — Créez l'application sur https://eu.api.ovh.com/createApp/
+
+Vous obtenez une `Application Key` et un `Application Secret`.
 
 **Étape 2** — Générez le Consumer Key :
 
@@ -276,9 +372,30 @@ curl -X POST https://eu.api.ovh.com/1.0/auth/credential \
 
 Ouvrez la `validationUrl` retournée dans votre navigateur pour valider.
 
+**Étape 3** — Ajoutez les trois clés dans votre `.env` local (voir ci-dessus).
+
+=== Configuration dans `deploy.yml`
+
+Pour activer la création automatique du CNAME, ajoutez dans chaque environnement concerné :
+
+[source,yaml]
+----
+environments:
+  preproduction:
+    branch: developpement
+    host: fiona.aloli.net
+    user: deploy
+    app_url: https://preprod.mon-app.aloli.app
+    dns_subdomain: preprod.mon-app   # ← sous-domaine à créer
+    dns_target: fiona.aloli.net.     # ← cible du CNAME (point final obligatoire)
+
+ovh:
+  dns_zone: aloli.app                # ← zone DNS OVH
+----
+
 == GitHub Actions (CI/CD automatique)
 
-La commande `generate-ci` génère automatiquement le fichier de workflow adapté à votre configuration.
+La commande `generate-ci` génère automatiquement le fichier de workflow adapté à votre configuration et à votre framework.
 
 === Étape 1 — Générer la clé SSH dédiée
 
@@ -299,9 +416,6 @@ Dans les paramètres du dépôt GitHub → *Settings → Secrets and variables �
 
 | `SSH_PRIVATE_KEY`
 | Contenu de `~/.ssh/deploy_ed25519` (clé privée)
-
-| `SSH_HOST`
-| Adresse du serveur (ex: `fiona.aloli.net`)
 |===
 
 === Étape 3 — Générer le workflow
@@ -314,7 +428,7 @@ git commit -m "ci: ajouter le workflow de déploiement automatique"
 git push
 ----
 
-Le workflow généré déclenche automatiquement un déploiement à chaque push sur les branches `developpement` (staging) et `production`.
+Le workflow généré déclenche automatiquement un déploiement à chaque push sur les branches `developpement` (pré-production) et `production`.
 
 == Licence
 
