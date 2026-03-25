@@ -57,7 +57,7 @@ module Aloli
           save_to_env(app_key, app_secret, consumer_key)
 
           puts
-          log_success "Clés OVH configurées et sauvegardées dans #{ENV_FILE}"
+          log_info "Clés OVH configurées et sauvegardées dans #{ENV_FILE}"
           puts
           puts "Vous pouvez maintenant utiliser la création automatique de CNAME DNS".colorize(:cyan)
           puts "en ajoutant dns_subdomain et dns_target dans vos environnements.".colorize(:cyan)
