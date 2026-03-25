@@ -328,6 +328,27 @@ Ne dupliquez **jamais** les informations de `config/deploy.yml` (comme les URLs 
 [#dns-ovh]
 == DNS OVH (optionnel)
 
+=== Génération guidée des clés API
+
+Le shard propose un assistant interactif pour créer et configurer les clés API OVH en une seule commande :
+
+[source,sh]
+----
+bin/deploy ovh-setup
+----
+
+Cet assistant :
+
+. Ouvre l'URL de création d'application OVH et attend votre confirmation
+. Demande l'Application Key et l'Application Secret obtenus
+. Appelle automatiquement l'API OVH pour générer le Consumer Key avec les droits DNS minimaux
+. Ouvre l'URL de validation des droits et attend votre confirmation
+. Sauvegarde les trois clés dans votre `.env` local avec les permissions `600`
+
+Si des clés existent déjà dans le `.env`, l'assistant vous propose de les remplacer avant de continuer.
+
+
+
 Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation,
 en utilisant l'API REST OVH.
 

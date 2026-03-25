@@ -12,6 +12,7 @@ module Aloli
           rollback    Retour à la release précédente
           status      Afficher la version active et les releases disponibles
           generate-ci Générer le workflow GitHub Actions (.github/workflows/deploy.yml)
+          ovh-setup   Créer et configurer les clés API OVH (sauvegarde dans .env)
 
         Options :
           --<env>     Nom de l'environnement défini dans config/deploy.yml (défaut: preproduction)
@@ -48,10 +49,16 @@ module Aloli
           exit 0
         end
 
-        # Commande spéciale sans environnement
+        # Commandes spéciales sans environnement
         if args.first == "generate-ci"
           config = Config.load
           Commands::GenerateCI.new(config).run
+          exit 0
+        end
+
+        if args.first == "ovh-setup"
+          config = Config.load
+          Commands::OvhSetup.new(config).run
           exit 0
         end
 
@@ -79,7 +86,7 @@ module Aloli
           Commands::Status.new(config, env).run
         else
           STDERR.puts "Commande inconnue : #{command}".colorize(:red)
-          STDERR.puts "Commandes disponibles : init, deploy, rollback, status, generate-ci".colorize(:yellow)
+          STDERR.puts "Commandes disponibles : init, deploy, rollback, status, generate-ci, ovh-setup".colorize(:yellow)
           exit 1
         end
       end
