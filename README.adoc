@@ -1,4 +1,4 @@
-= aloli-cr-deploy
+= crystal-deploy
 :toc: left
 :toc-title: Table des matières
 :toclevels: 3
@@ -31,8 +31,8 @@ Ajoutez le shard dans votre `shard.yml` :
 [source,yaml]
 ----
 dependencies:
-  aloli-cr-deploy:
-    github: aloli/aloli-cr-deploy
+  crystal-deploy:
+    github: aloli-crystal/crystal-deploy
     branch: developpement
 ----
 
@@ -54,7 +54,7 @@ Copiez le fichier d'exemple dans votre projet :
 
 [source,sh]
 ----
-cp lib/aloli-cr-deploy/config/deploy.yml config/deploy.yml
+cp lib/crystal-deploy/config/deploy.yml config/deploy.yml
 ----
 
 Puis adaptez `config/deploy.yml` :

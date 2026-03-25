@@ -39,7 +39,7 @@ module Aloli
           # REQUIRE: LOGIN postgresql
           # KEYWORD: shutdown
           #
-          # Script rc.d généré par aloli-cr-deploy
+          # Script rc.d généré par crystal-deploy
           # Application : #{full_name}
           # Environnement : #{@env.name}
           #

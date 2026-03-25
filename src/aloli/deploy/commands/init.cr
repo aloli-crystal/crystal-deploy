@@ -148,7 +148,7 @@ module Aloli
 
         private def build_env_content(values : Hash(String, String)) : String
           lines = ["# Configuration #{@config.app_name} — #{@env.name}",
-                   "# Généré par aloli-cr-deploy le #{Time.local}",
+                   "# Généré par crystal-deploy le #{Time.local}",
                    ""]
           values.each do |k, v|
             lines << "#{k}=#{v}"

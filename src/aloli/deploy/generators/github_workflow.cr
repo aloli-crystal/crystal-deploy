@@ -30,7 +30,7 @@ module Aloli
           end
 
           <<-YAML
-          # Fichier généré par aloli-cr-deploy. Ne pas modifier manuellement.
+          # Fichier généré par crystal-deploy. Ne pas modifier manuellement.
           # Pour regénérer : bin/deploy generate-ci
           # Framework : #{@config.framework}
           name: CI/CD — Déploiement continu
@@ -118,7 +118,7 @@ module Aloli
                   run: shards install
 
                 - name: Compilation du binaire de déploiement
-                  run: crystal build lib/aloli-cr-deploy/src/deploy.cr --release -o bin/deploy
+                  run: crystal build lib/crystal-deploy/src/deploy.cr --release -o bin/deploy
 
                 - name: Configuration de SSH
                   uses: webfactory/ssh-agent@v0.9.0

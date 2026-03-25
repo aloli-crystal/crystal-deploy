@@ -56,7 +56,7 @@ module Aloli
           framework_comment = @config.marten? ? "Marten" : "Kemal"
           <<-NGINX
           # Configuration NGINX — #{full_name}
-          # Généré par aloli-cr-deploy (framework: #{framework_comment})
+          # Généré par crystal-deploy (framework: #{framework_comment})
 
           upstream #{rc_name} {
               server unix:#{socket_path};

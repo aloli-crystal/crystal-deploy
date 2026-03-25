@@ -17,7 +17,7 @@ module Aloli
 
           <<-'SHELL_EOF'
           #!/bin/sh
-          # Script généré automatiquement par aloli-cr-deploy
+          # Script généré automatiquement par crystal-deploy
           # Ne pas modifier manuellement.
           set -e
 
@@ -314,7 +314,7 @@ module Aloli
 
               sudo tee "${NGINX_CONF_DEST}" >/dev/null << NGINX_CONF
           # Configuration NGINX — ${APP_FULL_NAME}
-          # Généré par aloli-cr-deploy le $(date) (framework: ${FRAMEWORK})
+          # Généré par crystal-deploy le $(date) (framework: ${FRAMEWORK})
 
           upstream ${SERVICE_RC_NAME} {
               server unix:${SOCKET_PATH};

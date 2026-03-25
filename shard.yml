@@ -1,8 +1,8 @@
-name: aloli-cr-deploy
+name: crystal-deploy
 version: 0.1.0
 
 description: >
-  Shard Crystal pour le déploiement d'applications Kemal sur FreeBSD.
+  Shard Crystal pour le déploiement d'applications Marten et Kemal sur FreeBSD.
   Style Capistrano : releases/, current/, shared/.
   Génère dynamiquement les scripts rc.d et nginx.conf.
 
