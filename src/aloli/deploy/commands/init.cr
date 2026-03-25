@@ -50,10 +50,8 @@ module Aloli
 
           # Traiter les variables définies dans deploy.yml
           @config.env_vars.each do |var|
-            if var.build_from_pg
-              # Géré séparément ci-dessous
-              next
-            end
+            # Les variables build_from_pg sont gérées par le dialogue PostgreSQL dédié
+            next if var.build_from_pg
 
             default = resolve_default(var)
             label = default ? "#{var.label} [#{default}]" : var.label
@@ -72,11 +70,32 @@ module Aloli
             env_values[var.key] = value
           end
 
-          # PostgreSQL (dialogue dédié si DATABASE_URL doit être construit)
+          # PostgreSQL (dialogue dédié si une variable build_from_pg est définie)
           pg_user, pg_pass, pg_db, pg_host = "", "", "", ""
+          pg_socket_mode = false
           if @config.env_vars.any?(&.build_from_pg)
-            pg_user, pg_pass, pg_db, pg_host = build_pg_interactive
-            env_values["DATABASE_URL"] = "postgresql://#{pg_user}:#{pg_pass}@#{pg_host}/#{pg_db}"
+            pg_user, pg_pass, pg_db, pg_host, pg_socket_mode = build_pg_interactive
+            if @config.marten?
+              # Marten : variables DB_* séparées
+              env_values["DB_USER"]     = pg_user
+              env_values["DB_PASSWORD"] = pg_pass
+              env_values["DB_NAME"]     = pg_db
+              if pg_socket_mode
+                # Socket Unix : host = répertoire du socket, port = 5432
+                env_values["DB_HOST"]   = pg_host
+                env_values["DB_PORT"]   = "5432"
+              else
+                env_values["DB_HOST"]   = pg_host
+                env_values["DB_PORT"]   = "5432"
+              end
+            else
+              # Kemal : DATABASE_URL
+              if pg_socket_mode
+                env_values["DATABASE_URL"] = "postgresql://#{pg_user}:#{pg_pass}@#{pg_host}/#{pg_db}?host=#{pg_host}"
+              else
+                env_values["DATABASE_URL"] = "postgresql://#{pg_user}:#{pg_pass}@#{pg_host}/#{pg_db}"
+              end
+            end
           end
 
           # Récapitulatif
@@ -103,9 +122,17 @@ module Aloli
           {env_b64, pg_user_b64, pg_pass_b64, pg_db_b64, pg_host_b64}
         end
 
-        private def build_pg_interactive : {String, String, String, String}
+        private def build_pg_interactive : {String, String, String, String, Bool}
           puts ""
           puts "--- Base de données PostgreSQL ---".colorize.bold
+          puts ""
+          puts "Mode de connexion :"
+          puts "  1) Socket Unix (recommandé si PostgreSQL est sur le même serveur)"
+          puts "  2) TCP (host/port, pour un serveur distant)"
+          puts ""
+          mode = ask("Choix [1] : ")
+          mode = "1" if mode.empty?
+
           default_user = @config.app_name.tr("-", "_")
           pg_user = ask("Utilisateur PostgreSQL [#{default_user}] : ")
           pg_user = default_user if pg_user.empty?
@@ -121,16 +148,28 @@ module Aloli
           pg_db = ask("Nom de la base de données [#{default_db}] : ")
           pg_db = default_db if pg_db.empty?
 
-          pg_host = ask("Hôte PostgreSQL [localhost] : ")
-          pg_host = "localhost" if pg_host.empty?
+          socket_mode = false
+          if mode == "1"
+            # Socket Unix : host = chemin du répertoire du socket
+            default_socket = "/var/run/postgresql"
+            pg_host = ask("Répertoire du socket PostgreSQL [#{default_socket}] : ")
+            pg_host = default_socket if pg_host.empty?
+            log_info "Connexion via socket Unix : #{pg_host}/.s.PGSQL.5432"
+            socket_mode = true
+          else
+            # TCP
+            pg_host = ask("Hôte PostgreSQL [localhost] : ")
+            pg_host = "localhost" if pg_host.empty?
+          end
 
-          {pg_user, pg_pass, pg_db, pg_host}
+          {pg_user, pg_pass, pg_db, pg_host, socket_mode}
         end
 
         private def resolve_default(var : EnvVar) : String?
           case var.default_from
           when "app_url"
-            @env.app_url
+            # Retourne le nom de domaine seul (sans https://) pour MARTEN_ALLOWED_HOSTS
+            @env.app_url.sub(/^https?:\/\//, "")
           when "socket_path"
             @env.socket_path(@config.app_name)
           else

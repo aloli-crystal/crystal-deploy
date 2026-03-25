@@ -20,7 +20,7 @@ keep_releases: 10
 
 # Framework Crystal utilisé : marten | kemal (défaut : kemal)
 # Adapte : variables .env, chemins assets NGINX, migrations, workflow CI
-framework: kemal
+framework: marten
 
 # Environnements de déploiement
 environments:
@@ -32,6 +32,14 @@ environments:
     dns_subdomain: dev.mon-app
     dns_target: fiona.aloli.net.
 
+  preproduction:
+    branch: developpement
+    host: fiona.aloli.net
+    user: deploy
+    app_url: https://preprod.mon-app.aloli.app
+    dns_subdomain: preprod.mon-app
+    dns_target: fiona.aloli.net.
+
   production:
     branch: production
     host: toby.aloli.net
@@ -40,59 +48,96 @@ environments:
     dns_subdomain: mon-app
     dns_target: toby.aloli.net.
 
-# Variables d'environnement demandées lors du dialogue init
-# Chaque entrée : clé, label affiché, valeur par défaut (optionnel), secret (masque la saisie)
+# =============================================================================
+# Variables d'environnement demandées lors du dialogue `deploy init`
+#
+# Chaque entrée :
+#   key          : nom de la variable dans le .env
+#   label        : question affichée à l'utilisateur
+#   default_from : valeur par défaut tirée de l'environnement courant
+#                  (app_url | socket_path)
+#   generate     : génération automatique si vide (hex32 | base64_20)
+#   build_from_pg: true → dialogue PostgreSQL dédié (host, user, pass, db, socket)
+#   optional     : true → la variable peut être laissée vide
+#   secret       : true → la saisie est masquée
+# =============================================================================
+
+# --- Exemple pour framework: marten ---
 env_vars:
-  - key: SESSION_SECRET
-    label: "SESSION_SECRET"
-    generate: hex32          # génère automatiquement si vide : hex32 | base64_20
+  - key: SECRET_KEY
+    label: "Clé secrète de l'application (laisser vide pour générer)"
+    generate: hex32
 
-  - key: APP_URL
-    label: "APP_URL"
-    default_from: app_url    # reprend app_url de l'environnement courant
+  - key: MARTEN_ALLOWED_HOSTS
+    label: "Nom de domaine de l'application (ex: preprod.mon-app.aloli.app)"
+    default_from: app_url   # reprend l'URL sans le https://
 
-  - key: DATABASE_URL
-    label: "DATABASE_URL (postgresql://user:pass@host/db)"
-    # Construit automatiquement depuis les champs pg_* si absent
+  - key: MARTEN_SOCKET
+    label: "Chemin du socket Unix de l'application (laisser vide pour la valeur par défaut)"
+    default_from: socket_path   # ex: /tmp/.mon-app--preproduction.sock
+
+  # PostgreSQL — le dialogue dédié demande : hôte OU socket Unix, port, utilisateur,
+  # mot de passe, nom de la base. Les variables DB_* sont construites automatiquement.
+  - key: DB_HOST
+    label: "Connexion PostgreSQL"
     build_from_pg: true
 
-  - key: UNIX_SOCKET
-    label: "UNIX_SOCKET"
-    default_from: socket_path  # /var/run/{app_name}/{env}.sock
+  - key: SMTP_HOST
+    label: "Serveur SMTP (ex: smtp.aloli.net)"
+    optional: true
+
+  - key: SMTP_PORT
+    label: "Port SMTP (ex: 587)"
+    optional: true
+
+  - key: SMTP_USER
+    label: "Utilisateur SMTP"
+    optional: true
+
+  - key: SMTP_PASSWORD
+    label: "Mot de passe SMTP"
+    optional: true
+    secret: true
+
+  - key: EMAIL_FROM
+    label: "Adresse email expéditeur (ex: noreply@mon-app.aloli.app)"
+    optional: true
 
   - key: STRIPE_SECRET_KEY
-    label: "STRIPE_SECRET_KEY"
-    optional: true
-
-  - key: PAYPAL_CLIENT_ID
-    label: "PAYPAL_CLIENT_ID"
-    optional: true
-
-  - key: PAYPAL_SECRET
-    label: "PAYPAL_SECRET"
+    label: "Clé secrète Stripe (ex: sk_live_...)"
     optional: true
     secret: true
 
-  - key: TWILIO_ACCOUNT_SID
-    label: "TWILIO_ACCOUNT_SID"
+  - key: STRIPE_PUBLISHABLE_KEY
+    label: "Clé publique Stripe (ex: pk_live_...)"
     optional: true
 
-  - key: TWILIO_AUTH_TOKEN
-    label: "TWILIO_AUTH_TOKEN"
+  - key: STRIPE_WEBHOOK_SECRET
+    label: "Secret webhook Stripe (ex: whsec_...)"
     optional: true
     secret: true
 
-  - key: TWILIO_FROM
-    label: "TWILIO_FROM (ex: +33600000000)"
-    optional: true
-
-  - key: BREVO_API_KEY
-    label: "BREVO_API_KEY"
-    optional: true
-    secret: true
+# --- Exemple pour framework: kemal (décommenter et remplacer la section env_vars) ---
+# env_vars:
+#   - key: SESSION_SECRET
+#     label: "Clé secrète de session (laisser vide pour générer)"
+#     generate: hex32
+#
+#   - key: APP_URL
+#     label: "URL publique de l'application (ex: https://preprod.mon-app.aloli.app)"
+#     default_from: app_url
+#
+#   - key: DATABASE_URL
+#     label: "URL PostgreSQL (laisser vide pour le dialogue guidé)"
+#     build_from_pg: true
+#
+#   - key: UNIX_SOCKET
+#     label: "Chemin du socket Unix de l'application"
+#     default_from: socket_path
 
 # Configuration OVH DNS (optionnel)
-# Les clés sont stockées dans config/.ovhrc (non versionné)
+# Les clés API OVH sont stockées dans le .env local (non versionné).
+# Utilisez `bin/deploy ovh-setup` pour les générer.
 ovh:
   dns_zone: aloli.app
   api_url: https://eu.api.ovh.com/1.0

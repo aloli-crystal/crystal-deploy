@@ -9,7 +9,8 @@ module Aloli
       class RemoteRunner
         include Logger
 
-        REMOTE_SCRIPT_TEMPLATE = "deploy-remote-$$.sh"
+        # Nom unique basé sur le PID du processus Crystal local
+        REMOTE_SCRIPT_NAME = "deploy-remote-#{Process.pid}.sh"
 
         def initialize(
           @client : Client,
@@ -25,7 +26,7 @@ module Aloli
         end
 
         def run : Nil
-          remote_script = "/tmp/#{REMOTE_SCRIPT_TEMPLATE}"
+          remote_script = "/tmp/#{REMOTE_SCRIPT_NAME}"
 
           # Générer le script distant en mémoire
           script_content = RemoteScript.generate(@config, @env)
