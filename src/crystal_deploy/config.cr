@@ -237,6 +237,31 @@ module CrystalDeploy
       vars
     end
 
+    # ─── Lecture du .env local ──────────────────────────────────────────────────
+    #
+    # Lors du `init`, si un fichier .env local existe déjà (par exemple après
+    # un premier `init` ou une copie manuelle), le shard lit les valeurs
+    # existantes pour pré-remplir le dialogue et éviter de ressaisir les secrets.
+    #
+    # Les valeurs lues sont masquées à l'affichage (***) mais utilisées comme
+    # défaut si l'utilisateur appuie sur Entrée sans saisir de nouvelle valeur.
+    #
+    def load_env_local(path : String = ".env") : Hash(String, String)
+      result = {} of String => String
+      return result unless File.exists?(path)
+
+      File.each_line(path) do |line|
+        stripped = line.strip
+        next if stripped.empty? || stripped.starts_with?("#")
+        if stripped.includes?("=")
+          key, _, value = stripped.partition("=")
+          result[key.strip] = value.strip
+        end
+      end
+
+      result
+    end
+
     # Variables par défaut si .env.example est absent (projet Marten minimal)
     private def default_env_vars : Array(EnvExampleVar)
       vars = [] of EnvExampleVar

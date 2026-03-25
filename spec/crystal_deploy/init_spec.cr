@@ -185,7 +185,94 @@ describe "CrystalDeploy — génération de valeurs" do
   end
 end
 
-# ─── Tests sur la lecture des clés OVH ─────────────────────────────────────────
+# ─── Tests sur la lecture du .env local (pré-remplissage) ────────────────────────
+
+describe "CrystalDeploy::Config — load_env_local" do
+  it "retourne un hash vide si le fichier .env est absent" do
+    config = make_config
+    result = config.load_env_local("/tmp/nonexistent_env_#{Random.rand(99999)}")
+    result.should be_empty
+  end
+
+  it "lit les variables depuis un .env local" do
+    tmp = File.tempfile("test_local_env") do |f|
+      f.print <<-ENV
+        SECRET_KEY=ma_cle_secrete
+        SMTP_HOST=smtp.example.com
+        STRIPE_KEY=sk_test_abc123
+        DB_HOST=/var/run/postgresql
+        DB_USER=mon_app
+        ENV
+    end
+
+    config = make_config
+    result = config.load_env_local(tmp.path)
+
+    result["SECRET_KEY"].should eq("ma_cle_secrete")
+    result["SMTP_HOST"].should eq("smtp.example.com")
+    result["STRIPE_KEY"].should eq("sk_test_abc123")
+    result["DB_HOST"].should eq("/var/run/postgresql")
+
+    tmp.delete
+  end
+
+  it "ignore les commentaires et lignes vides" do
+    tmp = File.tempfile("test_local_env_comments") do |f|
+      f.print <<-ENV
+        # Commentaire
+        SECRET_KEY=valeur
+
+        # Autre commentaire
+        SMTP_HOST=smtp.example.com
+        ENV
+    end
+
+    config = make_config
+    result = config.load_env_local(tmp.path)
+
+    result.size.should eq(2)
+    result["SECRET_KEY"].should eq("valeur")
+
+    tmp.delete
+  end
+
+  it "exclut les variables PostgreSQL du pré-remplissage serveur" do
+    tmp = File.tempfile("test_local_env_pg") do |f|
+      f.print <<-ENV
+        SECRET_KEY=ma_cle
+        DB_HOST=/var/run/postgresql
+        DB_USER=dev_user
+        DB_PASSWORD=dev_pass
+        DB_NAME=mon_app_dev
+        DB_PORT=5432
+        DB_POOL_SIZE=5
+        SMTP_HOST=smtp.example.com
+        ENV
+    end
+
+    config = make_config
+    all_env = config.load_env_local(tmp.path)
+    pg_keys = CrystalDeploy::Config::PG_VARS_MARTEN + CrystalDeploy::Config::PG_VARS_KEMAL + ["DB_PORT", "DB_POOL_SIZE"]
+    filtered = all_env.reject { |k, _| pg_keys.includes?(k) }
+
+    # Les variables PostgreSQL ne doivent pas être dans le pré-remplissage
+    filtered.has_key?("DB_HOST").should be_false
+    filtered.has_key?("DB_USER").should be_false
+    filtered.has_key?("DB_PASSWORD").should be_false
+    filtered.has_key?("DB_NAME").should be_false
+    filtered.has_key?("DB_PORT").should be_false
+    filtered.has_key?("DB_POOL_SIZE").should be_false
+
+    # Les autres variables doivent être présentes
+    filtered["SECRET_KEY"].should eq("ma_cle")
+    filtered["SMTP_HOST"].should eq("smtp.example.com")
+
+    tmp.delete
+  end
+end
+
+
+# ─── Tests sur la lecture des clés OVH ──────────────────────────────────────────
 
 describe "CrystalDeploy — lecture clés OVH depuis .env" do
   it "lit les clés OVH depuis un fichier .env temporaire" do
