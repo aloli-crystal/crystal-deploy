@@ -105,6 +105,16 @@ module Aloli
         framework_enum == Framework::Kemal
       end
 
+      # Retourne la zone DNS OVH (depuis la config ovh: ou valeur par défaut)
+      def ovh_dns_zone : String
+        ovh.try(&.dns_zone) || "aloli.app"
+      end
+
+      # Retourne l'URL de l'API OVH
+      def ovh_api_url : String
+        ovh.try(&.api_url) || "https://eu.api.ovh.com/1.0"
+      end
+
       # Charge la configuration depuis un fichier YAML
       def self.load(path : String = "config/deploy.yml") : Config
         unless File.exists?(path)

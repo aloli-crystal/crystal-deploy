@@ -105,7 +105,7 @@ module Aloli
           }.to_json
 
           response = HTTP::Client.post(
-            "#{OVH_API_URL}/auth/credential",
+            "#{@config.ovh_api_url}/auth/credential",
             headers: HTTP::Headers{
               "Content-Type"    => "application/json",
               "X-Ovh-Application" => app_key,
