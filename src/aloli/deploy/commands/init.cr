@@ -73,7 +73,13 @@ module Aloli
             next if auto_keys.includes?(var.key)
 
             default = resolve_default(var)
-            label = default ? "#{var.label} [#{default}]" : var.label
+            if default
+              label = "#{var.label} [#{default}]"
+            elsif var.generate
+              label = "#{var.label} [générée automatiquement si vide]"
+            else
+              label = var.label
+            end
             label += " (optionnel)" if var.optional
             label += " : "
 
