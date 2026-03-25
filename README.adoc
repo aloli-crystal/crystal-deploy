@@ -299,6 +299,33 @@ Le socket Unix est créé avec les permissions `deploy:www 660` pour que NGINX
 (qui tourne sous l'utilisateur `www`) puisse y accéder.
 
 [#dns-ovh]
+== Gestion des fichiers de configuration
+
+L'architecture du shard repose sur une séparation stricte des responsabilités entre les fichiers de configuration. Il est crucial de bien comprendre le rôle de chacun :
+
+[cols="2,3,1"]
+|===
+| Fichier | Rôle | Versionné
+
+| `config/deploy.yml`
+| **Source unique de vérité pour l'infrastructure.** Contient la définition des environnements (hôtes, branches, URLs, sous-domaines DNS, framework utilisé).
+| **Oui**
+
+| `.env` local
+| **Secrets du développeur.** Contient les clés d'accès aux API externes (comme l'API OVH) nécessaires depuis la machine locale pour administrer l'infrastructure. Ne doit jamais contenir la configuration des serveurs.
+| **Non**
+
+| `shared/.env` (serveur)
+| **Secrets de l'application en production.** Construit interactivement lors de l'`init`. Contient les identifiants de base de données, clés secrètes Marten/Kemal, et identifiants SMTP. Lu uniquement par l'application sur le serveur.
+| **Non**
+|===
+
+[WARNING]
+====
+Ne dupliquez **jamais** les informations de `config/deploy.yml` (comme les URLs ou les hôtes) dans votre `.env` local. Le binaire `deploy` lit directement le fichier YAML pour orchestrer les déploiements.
+====
+
+[#dns-ovh]
 == DNS OVH (optionnel)
 
 Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation,
