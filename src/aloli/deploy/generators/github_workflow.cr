@@ -3,36 +3,42 @@ module Aloli
     module Generators
       # Génère le fichier .github/workflows/deploy.yml
       #
-      # Améliorations apportées :
-      #   - Hôtes SSH distincts par environnement (SSH_HOST_DEV / SSH_HOST_PROD)
-      #     au lieu d'un unique SSH_HOST partagé
-      #   - Étape de notification d'échec (alerte GitHub Issues) sur erreur de
-      #     compilation ou d'échec de déploiement
-      #   - Concurrency group : annule les runs en attente sur la même branche
-      #     (évite les déploiements en file d'attente après pushes rapides)
+      # Différences selon le framework :
+      #   - marten : tests avec DB_* + MARTEN_ENV=test + marten migrate, pas de schema_pg.sql
+      #   - kemal  : tests avec DATABASE_URL + schema_pg.sql statique
       class GitHubWorkflow
         def initialize(@config : Config)
         end
 
         def generate : String
-          # Détecter les noms d'environnement (ex: developpement, production)
-          dev_env  = @config.environments.keys.find { |k| k.starts_with?("dev") } || "developpement"
+          # Détecter les noms d'environnement
+          # Priorité : préfixe "preprod" ou "pre" pour la préprod, "prod" pour la prod
+          preprod_env = @config.environments.keys.find { |k|
+            k.starts_with?("preprod") || k.starts_with?("pre") || k.starts_with?("dev")
+          } || "preproduction"
           prod_env = @config.environments.keys.find { |k| k.starts_with?("prod") } || "production"
 
-          dev_host  = @config.environments[dev_env]?.try(&.host) || "fiona.aloli.net"
-          prod_host = @config.environments[prod_env]?.try(&.host) || "toby.aloli.net"
+          preprod_host = @config.environments[preprod_env]?.try(&.host) || "fiona.aloli.net"
+          prod_host    = @config.environments[prod_env]?.try(&.host)    || "toby.aloli.net"
 
           app_db = @config.app_name.gsub("-", "_")
+
+          if @config.marten?
+            test_steps = marten_test_steps(app_db)
+          else
+            test_steps = kemal_test_steps(app_db)
+          end
 
           <<-YAML
           # Fichier généré par aloli-cr-deploy. Ne pas modifier manuellement.
           # Pour regénérer : bin/deploy generate-ci
+          # Framework : #{@config.framework}
           name: CI/CD — Déploiement continu
 
           on:
             push:
               branches:
-                - #{dev_env}
+                - #{preprod_env}
                 - #{prod_env}
 
           # Annule les runs en attente sur la même branche pour éviter les
@@ -74,13 +80,7 @@ module Aloli
                 - name: Installation des dépendances
                   run: shards install
 
-                - name: Lancement des tests
-                  env:
-                    DATABASE_URL: postgresql://runner@localhost:5432/#{app_db}__test
-                  run: |
-                    psql -U runner -h localhost -c "CREATE DATABASE #{app_db}__test;"
-                    psql -U runner -h localhost #{app_db}__test -f db/schema_pg.sql
-                    crystal spec
+          #{test_steps}
 
                 - name: Notification d'échec des tests
                   if: failure()
@@ -91,7 +91,7 @@ module Aloli
                         owner: context.repo.owner,
                         repo: context.repo.repo,
                         title: `[CI] Échec des tests — ${context.ref.replace('refs/heads/', '')} @ ${context.sha.substring(0, 7)}`,
-                        body: `Les tests ont échoué lors du push sur \`${context.ref.replace('refs/heads/', '')}\`.\\n\\n` +
+                        body: `Les tests ont échoué lors du push sur \\`${context.ref.replace('refs/heads/', '')}\\`.\\n\\n` +
                               `**Commit** : ${context.sha}\\n` +
                               `**Auteur** : ${context.actor}\\n` +
                               `**Workflow** : ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
@@ -105,7 +105,7 @@ module Aloli
               name: Déploiement
               needs: test
               runs-on: ubuntu-latest
-              if: github.ref == 'refs/heads/#{dev_env}' || github.ref == 'refs/heads/#{prod_env}'
+              if: github.ref == 'refs/heads/#{preprod_env}' || github.ref == 'refs/heads/#{prod_env}'
 
               steps:
                 - name: Checkout
@@ -125,19 +125,19 @@ module Aloli
                   with:
                     ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-                # Staging : hôte #{dev_host}
-                - name: Ajout de l'hôte staging aux known_hosts
-                  if: github.ref == 'refs/heads/#{dev_env}'
-                  run: ssh-keyscan -H #{dev_host} >> ~/.ssh/known_hosts
+                # Pré-production : hôte #{preprod_host}
+                - name: Ajout de l'hôte pré-production aux known_hosts
+                  if: github.ref == 'refs/heads/#{preprod_env}'
+                  run: ssh-keyscan -H #{preprod_host} >> ~/.ssh/known_hosts
 
                 # Production : hôte #{prod_host}
                 - name: Ajout de l'hôte production aux known_hosts
                   if: github.ref == 'refs/heads/#{prod_env}'
                   run: ssh-keyscan -H #{prod_host} >> ~/.ssh/known_hosts
 
-                - name: Déploiement sur Staging (#{dev_host})
-                  if: github.ref == 'refs/heads/#{dev_env}'
-                  run: bin/deploy deploy --#{dev_env}
+                - name: Déploiement sur Pré-production (#{preprod_host})
+                  if: github.ref == 'refs/heads/#{preprod_env}'
+                  run: bin/deploy deploy --#{preprod_env}
 
                 - name: Déploiement sur Production (#{prod_host})
                   if: github.ref == 'refs/heads/#{prod_env}'
@@ -153,15 +153,47 @@ module Aloli
                         owner: context.repo.owner,
                         repo: context.repo.repo,
                         title: `[DEPLOY] Échec du déploiement — ${env} @ ${context.sha.substring(0, 7)}`,
-                        body: `Le déploiement a échoué sur l'environnement \`${env}\`.\\n\\n` +
+                        body: `Le déploiement a échoué sur l'environnement \\`${env}\\`.\\n\\n` +
                               `**Commit** : ${context.sha}\\n` +
                               `**Auteur** : ${context.actor}\\n` +
                               `**Workflow** : ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\\n\\n` +
                               `Vérifiez les logs de compilation sur le serveur :\\n` +
-                              `\`sudo tail -f /home/${context.repo.repo}--${env}/shared/log/${context.repo.repo}--${env}.log\``,
+                              `\\`sudo tail -f /home/${context.repo.repo}--${env}/shared/log/${context.repo.repo}--${env}.log\\``,
                         labels: ['bug', 'deploy']
                       })
           YAML
+        end
+
+        private def marten_test_steps(app_db : String) : String
+          <<-STEPS
+                - name: Lancement des tests (Marten)
+                  env:
+                    MARTEN_ENV: test
+                    SECRET_KEY: ci_test_secret_key_not_used_in_production
+                    DB_HOST: localhost
+                    DB_PORT: "5432"
+                    DB_USER: runner
+                    DB_PASSWORD: ""
+                    DB_NAME: #{app_db}_test
+                    DB_NAME_TEST: #{app_db}_test
+                  run: |
+                    psql -U runner -h localhost -c "CREATE DATABASE #{app_db}_test;"
+                    crystal build src/server.cr --release -o bin/#{app_db}
+                    MARTEN_ENV=test ./bin/#{app_db} migrate
+                    crystal spec
+          STEPS
+        end
+
+        private def kemal_test_steps(app_db : String) : String
+          <<-STEPS
+                - name: Lancement des tests (Kemal)
+                  env:
+                    DATABASE_URL: postgresql://runner@localhost:5432/#{app_db}__test
+                  run: |
+                    psql -U runner -h localhost -c "CREATE DATABASE #{app_db}__test;"
+                    psql -U runner -h localhost #{app_db}__test -f db/schema_pg.sql
+                    crystal spec
+          STEPS
         end
       end
     end

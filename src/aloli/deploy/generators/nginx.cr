@@ -4,6 +4,10 @@ module Aloli
       # Génère le fichier nginx.conf pour un environnement donné.
       # La génération effective sur le serveur est faite par le script distant (remote_script.cr).
       # Ce générateur est utilisé pour les tests et la prévisualisation locale.
+      #
+      # Différences selon le framework :
+      #   - marten : assets compilés dans public/assets/ (un seul dossier)
+      #   - kemal  : assets dans public/css/, public/js/, public/images/, public/vendor/
       class Nginx
         def initialize(@config : Config, @env : Environment)
         end
@@ -31,11 +35,28 @@ module Aloli
           url
         end
 
+        # Génère les directives d'alias statiques selon le framework
+        private def static_locations : String
+          if @config.marten?
+            # Marten compile tous les assets dans public/assets/
+            "    location /assets/ { alias #{app_home}/current/public/assets/; expires 30d; add_header Cache-Control \"public, immutable\"; }"
+          else
+            # Kemal : structure classique multi-dossiers
+            <<-LOCATIONS
+                location /css/    { alias #{app_home}/current/public/css/;    expires 30d; add_header Cache-Control "public, immutable"; }
+                location /js/     { alias #{app_home}/current/public/js/;     expires 30d; add_header Cache-Control "public, immutable"; }
+                location /images/ { alias #{app_home}/current/public/images/; expires 30d; add_header Cache-Control "public, immutable"; }
+                location /vendor/ { alias #{app_home}/current/public/vendor/; expires 30d; add_header Cache-Control "public, immutable"; }
+            LOCATIONS
+          end
+        end
+
         # Génère le contenu du nginx.conf
         def generate : String
+          framework_comment = @config.marten? ? "Marten" : "Kemal"
           <<-NGINX
           # Configuration NGINX — #{full_name}
-          # Généré par aloli-cr-deploy
+          # Généré par aloli-cr-deploy (framework: #{framework_comment})
 
           upstream #{rc_name} {
               server unix:#{socket_path};
@@ -60,10 +81,7 @@ module Aloli
                   client_max_body_size  2M;
               }
 
-              location /css/    { alias #{app_home}/current/public/css/;    expires 30d; add_header Cache-Control "public, immutable"; }
-              location /js/     { alias #{app_home}/current/public/js/;     expires 30d; add_header Cache-Control "public, immutable"; }
-              location /images/ { alias #{app_home}/current/public/images/; expires 30d; add_header Cache-Control "public, immutable"; }
-              location /vendor/ { alias #{app_home}/current/public/vendor/; expires 30d; add_header Cache-Control "public, immutable"; }
+          #{static_locations}
           }
 
           # Bloc HTTPS — activer après obtention du certificat SSL

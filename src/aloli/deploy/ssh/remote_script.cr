@@ -4,6 +4,12 @@ module Aloli
       # Génère le script shell POSIX exécuté sur le serveur distant.
       # Ce script est auto-contenu : il reçoit tous ses paramètres en arguments
       # et n'a pas besoin du shard Crystal côté serveur.
+      #
+      # Le paramètre FRAMEWORK (marten | kemal) adapte :
+      #   - La lecture des variables .env (APP_URL+UNIX_SOCKET vs MARTEN_ALLOWED_HOSTS+MARTEN_SOCKET)
+      #   - Les alias statiques NGINX (public/assets/ vs public/css|js|images|vendor/)
+      #   - Les migrations (marten migrate vs schema_pg.sql)
+      #   - Le seed (marten manage seed vs ./bin/<app> seed)
       module RemoteScript
         def self.generate(config : Config, env : Environment) : String
           rcd_generator = Generators::Rcd.new(config, env)
@@ -29,6 +35,7 @@ module Aloli
           PG_PASS_B64="${12:-}"
           PG_DB_B64="${13:-}"
           PG_HOST_B64="${14:-}"
+          FRAMEWORK="${15:-kemal}"
 
           # --- Variables dérivées ---
           APP_FULL_NAME="${APP_NAME}--${ENV_NAME}"
@@ -61,9 +68,8 @@ module Aloli
           }
 
           # ---------------------------------------------------------------------------
-          # Verrou de déploiement (amélioration F)
+          # Verrou de déploiement
           # Empêche deux déploiements simultanés (ex : deux pushes rapides sur CI).
-          # Le verrou est automatiquement supprimé à la fin du script (trap EXIT).
           # ---------------------------------------------------------------------------
           acquire_lock() {
             if [ -f "${LOCKFILE}" ]; then
@@ -132,10 +138,8 @@ module Aloli
               log_warn "Lancez d'abord un premier deploy, puis relancez init."
               return 0
             fi
-            # Copier dans shared/ (survit aux rollbacks)
             sudo install -m 755 -o root -g wheel "${RCD_SRC}" "${RCD_SHARED}"
             log_info "Script rc.d copié dans shared/ : ${RCD_SHARED}"
-            # Créer le lien symbolique (supprimer l'existant)
             sudo rm -f "${RCD_LINK}"
             sudo ln -s "${RCD_SHARED}" "${RCD_LINK}"
             log_info "Lien symbolique créé : ${RCD_LINK} → ${RCD_SHARED}"
@@ -149,8 +153,14 @@ module Aloli
             fi
           }
 
+          # ---------------------------------------------------------------------------
+          # init_database : comportement différent selon FRAMEWORK
+          #
+          #   kemal  : applique db/schema_pg.sql si présent, puis lance le seed binaire
+          #   marten : lance `marten migrate` puis `marten manage seed` (ou seed.cr CLI)
+          # ---------------------------------------------------------------------------
           init_database() {
-            log_section "Base de données PostgreSQL"
+            log_section "Base de données PostgreSQL (framework: ${FRAMEWORK})"
             if [ -n "${PG_USER_B64}" ]; then
               PG_USER=$(printf '%s' "${PG_USER_B64}" | base64 -d)
               PG_PASS=$(printf '%s' "${PG_PASS_B64}" | base64 -d)
@@ -168,9 +178,12 @@ module Aloli
                 if [ "${DB_EXISTS}" != "1" ]; then
                   sudo su -m postgres -c "createdb -O ${PG_USER} ${PG_DB}"
                   log_info "Base de données '${PG_DB}' créée."
-                  [ -f "${CURRENT_LINK}/db/schema_pg.sql" ] && \
-                    sudo su -m postgres -c "psql -d ${PG_DB} -f ${CURRENT_LINK}/db/schema_pg.sql" && \
-                    log_info "Schéma appliqué."
+                  # Kemal : appliquer le schéma SQL statique si présent
+                  if [ "${FRAMEWORK}" = "kemal" ]; then
+                    [ -f "${CURRENT_LINK}/db/schema_pg.sql" ] && \
+                      sudo su -m postgres -c "psql -d ${PG_DB} -f ${CURRENT_LINK}/db/schema_pg.sql" && \
+                      log_info "Schéma SQL appliqué."
+                  fi
                 else
                   log_info "Base de données '${PG_DB}' déjà présente."
                 fi
@@ -178,16 +191,42 @@ module Aloli
                 log_warn "psql introuvable. Installez PostgreSQL : pkg install postgresql16-client"
               fi
             fi
+
+            # Migrations et seed selon le framework
             if [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && [ -f "${SHARED_DIR}/.env" ]; then
-              sudo su -m "${APP_USER}" -c \
-                "cd ${CURRENT_LINK} && env \$(cat ${SHARED_DIR}/.env | grep -v '^#' | xargs) \
-                 ./bin/${APP_FULL_NAME} seed 2>&1" || \
-                log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
+              ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
+              if [ "${FRAMEWORK}" = "marten" ]; then
+                # Marten : migrations via la CLI intégrée
+                log_section "Migrations Marten"
+                sudo su -m "${APP_USER}" -c \
+                  "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || \
+                  log_warn "Migrations retournées une erreur (peut-être déjà appliquées)."
+                # Seed Marten (seed.cr via CLI manage ou commande dédiée)
+                if [ -f "${CURRENT_LINK}/seed.cr" ] || grep -q 'command_name.*seed' \
+                    "${CURRENT_LINK}/src/"*"/cli/"*.cr 2>/dev/null; then
+                  log_section "Seed Marten"
+                  sudo su -m "${APP_USER}" -c \
+                    "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+                    log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
+                fi
+              else
+                # Kemal : seed via le binaire directement
+                log_section "Seed"
+                sudo su -m "${APP_USER}" -c \
+                  "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+                  log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
+              fi
             fi
           }
 
+          # ---------------------------------------------------------------------------
+          # init_nginx : lecture des variables selon le framework
+          #
+          #   kemal  : lit APP_URL et UNIX_SOCKET depuis .env
+          #   marten : lit MARTEN_ALLOWED_HOSTS (premier hôte) et MARTEN_SOCKET depuis .env
+          # ---------------------------------------------------------------------------
           init_nginx() {
-            log_section "Configuration NGINX"
+            log_section "Configuration NGINX (framework: ${FRAMEWORK})"
             NGINX_CONF_DEST="${SHARED_DIR}/nginx.conf"
 
             # Détection du binaire NGINX
@@ -220,20 +259,31 @@ module Aloli
 
             log_info "Mode NGINX : ${NGINX_MODE} | Conf : ${NGINX_CONF_DIR:-inconnu}"
 
-            # Lire APP_URL et UNIX_SOCKET depuis le .env
-            _NEW_SOCKET="/tmp/.${APP_FULL_NAME}.sock"
+            # Lire SERVER_NAME et SOCKET_PATH selon le framework
+            _DEFAULT_SOCKET="/tmp/.${APP_FULL_NAME}.sock"
             SERVER_NAME="${APP_FULL_NAME}.aloli.app"
-            SOCKET_PATH="${_NEW_SOCKET}"
+            SOCKET_PATH="${_DEFAULT_SOCKET}"
+
             if [ -f "${SHARED_DIR}/.env" ]; then
-              APP_URL_RAW=$(grep '^APP_URL=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
-              APP_URL_CLEAN=$(printf '%s' "${APP_URL_RAW}" | sed 's|^https://||' | sed 's|^http://||')
-              [ -n "${APP_URL_CLEAN}" ] && SERVER_NAME="${APP_URL_CLEAN}"
-              SOCKET_ENV=$(grep '^UNIX_SOCKET=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
-              # Ignorer l'ancien chemin /var/run/ (migration automatique)
-              case "${SOCKET_ENV}" in
-                /var/run/*) : ;; # ancien chemin ignoré
-                *) [ -n "${SOCKET_ENV}" ] && SOCKET_PATH="${SOCKET_ENV}" ;;
-              esac
+              if [ "${FRAMEWORK}" = "marten" ]; then
+                # Marten : MARTEN_ALLOWED_HOSTS (premier hôte de la liste CSV) et MARTEN_SOCKET
+                ALLOWED_HOSTS_RAW=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" \
+                  | cut -d= -f2- | tr -d '"')
+                FIRST_HOST=$(printf '%s' "${ALLOWED_HOSTS_RAW}" | cut -d, -f1 | tr -d ' ')
+                [ -n "${FIRST_HOST}" ] && SERVER_NAME="${FIRST_HOST}"
+                SOCKET_ENV=$(grep '^MARTEN_SOCKET=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
+                [ -n "${SOCKET_ENV}" ] && SOCKET_PATH="${SOCKET_ENV}"
+              else
+                # Kemal : APP_URL et UNIX_SOCKET
+                APP_URL_RAW=$(grep '^APP_URL=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
+                APP_URL_CLEAN=$(printf '%s' "${APP_URL_RAW}" | sed 's|^https://||' | sed 's|^http://||')
+                [ -n "${APP_URL_CLEAN}" ] && SERVER_NAME="${APP_URL_CLEAN}"
+                SOCKET_ENV=$(grep '^UNIX_SOCKET=' "${SHARED_DIR}/.env" | cut -d= -f2- | tr -d '"')
+                case "${SOCKET_ENV}" in
+                  /var/run/*) : ;; # ancien chemin ignoré
+                  *) [ -n "${SOCKET_ENV}" ] && SOCKET_PATH="${SOCKET_ENV}" ;;
+                esac
+              fi
             fi
 
             # Générer nginx.conf si absent ou si le socket a changé
@@ -241,19 +291,30 @@ module Aloli
             if [ ! -f "${NGINX_CONF_DEST}" ]; then
               _NGINX_NEEDS_REGEN=1
             elif [ -f "${NGINX_CONF_DEST}" ]; then
-              _CURRENT_SOCKET=$(grep 'server unix:' "${NGINX_CONF_DEST}" 2>/dev/null | sed 's/.*server unix://;s/;.*//' | tr -d ' ')
+              _CURRENT_SOCKET=$(grep 'server unix:' "${NGINX_CONF_DEST}" 2>/dev/null \
+                | sed 's/.*server unix://;s/;.*//' | tr -d ' ')
               if [ -n "${_CURRENT_SOCKET}" ] && [ "${_CURRENT_SOCKET}" != "${SOCKET_PATH}" ]; then
                 log_warn "Socket changé (${_CURRENT_SOCKET} → ${SOCKET_PATH}). Régénération de nginx.conf."
                 _NGINX_NEEDS_REGEN=1
               else
-                log_info "nginx.conf déjà présent et cohérent. Supprimez-le pour régénérer : sudo rm ${NGINX_CONF_DEST}"
+                log_info "nginx.conf déjà présent et cohérent."
               fi
             fi
 
             if [ "${_NGINX_NEEDS_REGEN}" = "1" ]; then
+              # Construire les directives d'assets selon le framework
+              if [ "${FRAMEWORK}" = "marten" ]; then
+                STATIC_LOCATIONS="    location /assets/ { alias ${APP_HOME}/current/public/assets/; expires 30d; add_header Cache-Control \"public, immutable\"; }"
+              else
+                STATIC_LOCATIONS="    location /css/    { alias ${APP_HOME}/current/public/css/;    expires 30d; add_header Cache-Control \"public, immutable\"; }
+              location /js/     { alias ${APP_HOME}/current/public/js/;     expires 30d; add_header Cache-Control \"public, immutable\"; }
+              location /images/ { alias ${APP_HOME}/current/public/images/; expires 30d; add_header Cache-Control \"public, immutable\"; }
+              location /vendor/ { alias ${APP_HOME}/current/public/vendor/; expires 30d; add_header Cache-Control \"public, immutable\"; }"
+              fi
+
               sudo tee "${NGINX_CONF_DEST}" >/dev/null << NGINX_CONF
           # Configuration NGINX — ${APP_FULL_NAME}
-          # Généré par aloli-cr-deploy le $(date)
+          # Généré par aloli-cr-deploy le $(date) (framework: ${FRAMEWORK})
 
           upstream ${SERVICE_RC_NAME} {
               server unix:${SOCKET_PATH};
@@ -278,10 +339,7 @@ module Aloli
                   client_max_body_size  2M;
               }
 
-              location /css/    { alias ${APP_HOME}/current/public/css/;    expires 30d; add_header Cache-Control "public, immutable"; }
-              location /js/     { alias ${APP_HOME}/current/public/js/;     expires 30d; add_header Cache-Control "public, immutable"; }
-              location /images/ { alias ${APP_HOME}/current/public/images/; expires 30d; add_header Cache-Control "public, immutable"; }
-              location /vendor/ { alias ${APP_HOME}/current/public/vendor/; expires 30d; add_header Cache-Control "public, immutable"; }
+          ${STATIC_LOCATIONS}
           }
 
           # Bloc HTTPS — activer après obtention du certificat SSL
@@ -291,6 +349,7 @@ module Aloli
           #     ssl_certificate     /usr/local/etc/letsencrypt/live/${SERVER_NAME}/fullchain.pem;
           #     ssl_certificate_key /usr/local/etc/letsencrypt/live/${SERVER_NAME}/privkey.pem;
           #     ssl_protocols TLSv1.2 TLSv1.3;
+          #     ssl_ciphers HIGH:!aNULL:!MD5;
           #     ...
           # }
           NGINX_CONF
@@ -379,28 +438,37 @@ module Aloli
           }
 
           # ---------------------------------------------------------------------------
+          # run_migrations : exécuté après compilation, avant activation de la release
+          # Marten uniquement — Kemal gère le schéma via init_database
+          # ---------------------------------------------------------------------------
+          run_migrations() {
+            [ "${FRAMEWORK}" != "marten" ] && return 0
+            [ ! -f "${RELEASE_DIR}/bin/${APP_FULL_NAME}" ] && return 0
+            [ ! -f "${SHARED_DIR}/.env" ] && return 0
+            log_section "Migrations Marten"
+            ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
+            sudo su -m "${APP_USER}" -c \
+              "cd ${RELEASE_DIR} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || {
+              log_error "Échec des migrations. Déploiement annulé."
+              exit 1
+            }
+            log_info "Migrations appliquées avec succès."
+          }
+
+          # ---------------------------------------------------------------------------
           # Arrêt gracieux : envoie SIGTERM au processus Crystal (PID enfant) et
           # attend sa mort avant de basculer la release.
-          # Timeout configurable via GRACEFUL_TIMEOUT dans .env (défaut 30s).
-          #
-          # Architecture double pidfile (amélioration A) :
-          #   PIDFILE_PARENT : PID du superviseur daemon(8) — ne pas envoyer SIGTERM ici
-          #                    (avec -r, SIGTERM sur le daemon relance l'enfant)
-          #   PIDFILE_CHILD  : PID de l'application Crystal — cible de SIGTERM
           # ---------------------------------------------------------------------------
           graceful_stop() {
             PIDFILE_PARENT="/tmp/.${APP_FULL_NAME}.pid"
             PIDFILE_CHILD="/tmp/.${APP_FULL_NAME}.child.pid"
             SOCKFILE="${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
 
-            # Vérifier si le service est actif
             sudo service "${SERVICE_RC_NAME}" status >/dev/null 2>&1 || {
               log_info "Service déjà arrêté."
               return 0
             }
 
-            # Étape 1 : arrêter le superviseur daemon(8) pour désactiver le
-            # redémarrage automatique (-r) avant d'envoyer SIGTERM à l'enfant.
             DAEMON_PID=""
             [ -f "${PIDFILE_PARENT}" ] && \
               DAEMON_PID=$(cat "${PIDFILE_PARENT}" 2>/dev/null | tr -d '[:space:]')
@@ -409,14 +477,11 @@ module Aloli
               sudo kill -TERM "${DAEMON_PID}" 2>/dev/null || true
             fi
 
-            # Étape 2 : lire le PID enfant (application Crystal)
             CHILD_PID=""
             [ -f "${PIDFILE_CHILD}" ] && \
               CHILD_PID=$(cat "${PIDFILE_CHILD}" 2>/dev/null | tr -d '[:space:]')
 
             if [ -n "${CHILD_PID}" ] && kill -0 "${CHILD_PID}" 2>/dev/null; then
-              # Amélioration C : vérifier que le PID correspond bien à notre binaire
-              # (protection contre réutilisation de PID après un crash)
               PROC_NAME=$(ps -o comm= -p "${CHILD_PID}" 2>/dev/null | tr -d '[:space:]' || true)
               EXPECTED_NAME=$(basename "${APP_FULL_NAME}")
               if [ -n "${PROC_NAME}" ] && [ "${PROC_NAME}" != "${EXPECTED_NAME}" ]; then
@@ -430,7 +495,6 @@ module Aloli
               log_info "Arrêt gracieux de l'application PID ${CHILD_PID} (SIGTERM)..."
               sudo kill -TERM "${CHILD_PID}" 2>/dev/null || true
 
-              # Attendre la mort du processus enfant
               WAIT=0
               while [ "${WAIT}" -lt "${GRACEFUL_TIMEOUT}" ]; do
                 sleep 1; WAIT=$((WAIT + 1))
@@ -442,11 +506,9 @@ module Aloli
                   log_info "  En attente de la fin des requêtes en cours (${WAIT}s/${GRACEFUL_TIMEOUT}s)..."
               done
 
-              # Timeout dépassé : SIGKILL en dernier recours
               if kill -0 "${CHILD_PID}" 2>/dev/null; then
                 log_warn "Timeout gracieux dépassé (${GRACEFUL_TIMEOUT}s). Envoi de SIGKILL..."
                 sudo kill -KILL "${CHILD_PID}" 2>/dev/null || true
-                # Amélioration C : vérifier que SIGKILL a bien terminé le processus
                 sleep 1
                 if kill -0 "${CHILD_PID}" 2>/dev/null; then
                   log_error "Impossible de tuer le processus ${CHILD_PID} (processus en état D ?)."
@@ -461,8 +523,6 @@ module Aloli
               sleep 2
             fi
 
-            # Amélioration B : supprimer le socket EN DERNIER, après la mort du processus,
-            # pour éviter les 502 Bad Gateway sur les requêtes en cours dans NGINX.
             sudo rm -f "${PIDFILE_CHILD}" && log_info "Pidfile enfant supprimé."
             sudo rm -f "${PIDFILE_PARENT}" && log_info "Pidfile superviseur supprimé."
             { [ -S "${SOCKFILE}" ] || [ -e "${SOCKFILE}" ]; } && \
@@ -471,11 +531,7 @@ module Aloli
 
           activate_release() {
             log_section "Activation de la release ${TIMESTAMP}"
-
-            # Étape 1 : arrêt gracieux de l'ancienne version
             graceful_stop
-
-            # Étape 2 : basculer le lien current vers la nouvelle release
             sudo ln -sfn "${RELEASE_DIR}" "${CURRENT_LINK}"
             sudo chown -h "${APP_USER}:${APP_GROUP}" "${CURRENT_LINK}"
             sudo ln -sf "${CURRENT_LINK}/bin/${APP_FULL_NAME}" "${BIN_LINK}"
@@ -520,8 +576,6 @@ module Aloli
 
           # ==========================================================================
           # ROLLBACK
-          # Utilise également l'arrêt gracieux pour ne pas interrompre les requêtes
-          # en cours lors d'un retour arrière.
           # ==========================================================================
           rollback() {
             log_section "Rollback"
@@ -529,12 +583,18 @@ module Aloli
             PREV_RELEASE=$(ls -1t "${RELEASES_DIR}" | grep -v "^${CURRENT_RELEASE}$" | head -1)
             [ -z "${PREV_RELEASE}" ] && { log_error "Aucune release précédente disponible."; exit 1; }
             log_warn "Rollback : ${CURRENT_RELEASE} → ${PREV_RELEASE}"
-
-            # Arrêt gracieux de la version actuelle avant de basculer
             graceful_stop
-
             sudo ln -sfn "${RELEASES_DIR}/${PREV_RELEASE}" "${CURRENT_LINK}"
             sudo ln -sf "${CURRENT_LINK}/bin/${APP_FULL_NAME}" "${BIN_LINK}"
+            # Rollback des migrations Marten si possible
+            if [ "${FRAMEWORK}" = "marten" ] && [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] \
+                && [ -f "${SHARED_DIR}/.env" ]; then
+              log_section "Migrations Marten (rollback vers release précédente)"
+              ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
+              sudo su -m "${APP_USER}" -c \
+                "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || \
+                log_warn "Migrations de rollback retournées une erreur."
+            fi
             sudo service "${SERVICE_RC_NAME}" start
             log_info "Rollback effectué vers ${PREV_RELEASE}."
           }
@@ -545,6 +605,7 @@ module Aloli
           status() {
             log_section "Statut — ${APP_FULL_NAME}"
             CURRENT_RELEASE=$(readlink "${CURRENT_LINK}" 2>/dev/null | xargs basename 2>/dev/null || echo "aucune")
+            printf "Framework       : %s\n" "${FRAMEWORK}"
             printf "Version active  : %s\n" "${CURRENT_RELEASE}"
             printf "Releases disponibles :\n"
             ls -1t "${RELEASES_DIR}" 2>/dev/null | while read -r rel; do
@@ -563,7 +624,7 @@ module Aloli
           case "${COMMAND}" in
             init)
               check_sudo
-              log_section "Initialisation [${ENV_NAME}]"
+              log_section "Initialisation [${ENV_NAME}] (framework: ${FRAMEWORK})"
               init_user
               init_directories
               init_env
@@ -580,10 +641,11 @@ module Aloli
               grep -q "changez_ce_secret" "${SHARED_DIR}/.env" 2>/dev/null && \
                 { log_error ".env contient encore les valeurs par défaut. Éditez-le."; exit 1; }
               DEPLOY_START=$(date +%s)
-              log_section "Déploiement [${ENV_NAME}] — ${TIMESTAMP}"
+              log_section "Déploiement [${ENV_NAME}] — ${TIMESTAMP} (framework: ${FRAMEWORK})"
               clone_repo
               link_shared
               compile
+              run_migrations
               activate_release
               init_rcd
               start_service
@@ -591,7 +653,14 @@ module Aloli
               cleanup_releases
               DEPLOY_END=$(date +%s)
               DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
-              APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')
+              # Récupérer l'URL selon le framework
+              if [ "${FRAMEWORK}" = "marten" ]; then
+                APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
+                  | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
+              else
+                APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
+                  | cut -d= -f2- | tr -d '"')
+              fi
               log_section "Déploiement [${ENV_NAME}] terminé avec succès !"
               log_info "Version active  : ${TIMESTAMP}"
               log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"

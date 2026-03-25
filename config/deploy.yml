@@ -18,6 +18,10 @@ crystal_main: src/mon_app.cr
 # Nombre de releases à conserver
 keep_releases: 10
 
+# Framework Crystal utilisé : marten | kemal (défaut : kemal)
+# Adapte : variables .env, chemins assets NGINX, migrations, workflow CI
+framework: kemal
+
 # Environnements de déploiement
 environments:
   developpement:
