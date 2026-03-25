@@ -11,15 +11,29 @@ module Aloli
           deploy      Déploiement d'une nouvelle release (défaut)
           rollback    Retour à la release précédente
           status      Afficher la version active et les releases disponibles
-          generate-ci Générer le fichier de workflow GitHub Actions (.github/workflows/deploy.yml)
+          generate-ci Générer le workflow GitHub Actions (.github/workflows/deploy.yml)
 
         Options :
-          --<env>     Nom de l'environnement (défaut: dev). Ex: --production
+          --<env>     Nom de l'environnement défini dans config/deploy.yml (défaut: dev)
+                      Les raccourcis par préfixe sont supportés :
+                        --dev     → premier environnement dont le nom commence par "dev"
+                        --preprod → premier environnement dont le nom commence par "preprod"
+                        --prod    → premier environnement dont le nom commence par "prod"
+
+        Configuration :
+          Le fichier config/deploy.yml doit définir :
+            framework: marten | kemal   (adapte NGINX, migrations, CI)
+            environments:
+              preproduction: ...
+              production: ...
 
         Exemples :
           deploy generate-ci
-          deploy init --developpement
-          deploy deploy --production
+          deploy init --preproduction       # ou raccourci : deploy init --preprod
+          deploy deploy --preproduction     # ou raccourci : deploy deploy --preprod
+          deploy deploy --production        # ou raccourci : deploy deploy --prod
+          deploy rollback --prod
+          deploy status --preprod
         USAGE
 
       def self.run(args : Array(String))
