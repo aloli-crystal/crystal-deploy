@@ -54,17 +54,6 @@ module CrystalDeploy
 
         env_values = {} of String => String
 
-        # Charger les valeurs existantes depuis le .env local (pré-remplissage)
-        # ATTENTION : les variables PostgreSQL (DB_*, DATABASE_URL) sont exclues
-        # car le .env local contient la config de la machine de développement,
-        # qui est différente de celle du serveur de déploiement.
-        pg_keys = CrystalDeploy::Config::PG_VARS_MARTEN + CrystalDeploy::Config::PG_VARS_KEMAL + ["DB_PORT", "DB_POOL_SIZE"]
-        existing_env = @config.load_env_local.reject { |k, _| pg_keys.includes?(k) }
-        unless existing_env.empty?
-          log_info "Valeurs non-PostgreSQL trouvées dans .env — appuyez sur Entrée pour les conserver."
-          puts ""
-        end
-
         # Charger les variables depuis .env.example
         all_vars = @config.load_env_example
 
@@ -107,7 +96,7 @@ module CrystalDeploy
 
          # ── 2. Variables AVANT PostgreSQL ─────────────────────────────────────
         vars_before_pg.each do |var|
-          ask_env_var(var, env_values, existing_env)
+          ask_env_var(var, env_values)
         end
 
         # ── 3. Dialogue PostgreSQL dédié ───────────────────────────────────────
@@ -142,7 +131,7 @@ module CrystalDeploy
 
          # ── 4. Variables APRÈS PostgreSQL ─────────────────────────────────────
         vars_after_pg.each do |var|
-          ask_env_var(var, env_values, existing_env)
+          ask_env_var(var, env_values)
         end
 
         # ── Récapitulatif ──────────────────────────────────────────────────────
@@ -173,28 +162,16 @@ module CrystalDeploy
         {env_b64, pg_user_b64, pg_pass_b64, pg_db_b64, pg_host_b64}
       end
 
-      # Pose une question pour une variable d'environnement et stocke la réponse
-      # existing_env : valeurs lues depuis le .env local pour pré-remplissage
-      private def ask_env_var(var : EnvExampleVar, env_values : Hash(String, String),
-                              existing_env : Hash(String, String) = {} of String => String) : Nil
+      # Pose une question pour une variable d'environnement et stocke la réponse.
+      # Le .env local (développement) n'est jamais utilisé comme source de pré-remplissage :
+      # ses valeurs sont spécifiques à la machine du développeur, pas au serveur cible.
+      private def ask_env_var(var : EnvExampleVar, env_values : Hash(String, String)) : Nil
         # Label : utiliser le commentaire du .env.example ou le nom de la clé
         label_text = var.comment.empty? ? var.key : var.comment
 
-        # Valeur de pré-remplissage : .env local > valeur par défaut du .env.example
-        existing_value = existing_env[var.key]?
-        effective_default = existing_value || var.default_value
-
-        # Affichage du défaut : masquer les secrets
-        default_display = if existing_value && var.is_secret
-          "#{existing_value[0, [existing_value.size, 4].min]}***" # ex: abcd***
-        elsif !effective_default.empty?
-          effective_default
-        else
-          nil
-        end
-
-        label = if default_display
-          "#{label_text} [#{default_display}]"
+        # Affichage du défaut depuis .env.example uniquement
+        label = if !var.default_value.empty? && !var.is_secret
+          "#{label_text} [#{var.default_value}]"
         elsif var.is_generated
           "#{label_text} [générée automatiquement si vide]"
         else
@@ -206,11 +183,9 @@ module CrystalDeploy
 
         value = ask(label)
 
-        # Entrée vide : conserver la valeur existante, puis le défaut, puis générer
+        # Entrée vide : utiliser la valeur par défaut du .env.example, puis générer
         if value.empty?
-          if existing_value
-            value = existing_value
-          elsif !var.default_value.empty?
+          if !var.default_value.empty?
             value = var.default_value
           elsif var.is_generated
             value = generate_value(var.key)

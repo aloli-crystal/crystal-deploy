@@ -197,7 +197,33 @@ module CrystalDeploy
 
         # Ligne de commentaire
         if stripped.starts_with?("#")
-          pending_comment = stripped.lstrip('#').strip
+          text = stripped.lstrip('#').strip
+          # Ignorer les commentaires de section (ex: ─── Serveur ───────)
+          if text.starts_with?("─") || text.ends_with?("─") || text.includes?("───")
+            pending_comment = ""
+            next
+          end
+          # Ignorer les lignes de commentaire qui sont des commandes shell
+          # (ex: "#   crystal eval '...'" ou "#   marten serve")
+          # Ces lignes sont des exemples de commandes, pas des descriptions de variables
+          is_shell_line = SHELL_COMMAND_PREFIXES.any? { |prefix| text.starts_with?(prefix) }
+          if is_shell_line
+            # Ne pas écraser un commentaire de description déjà en attente
+            next
+          end
+          # Pour les commentaires [généré], ne garder que le marqueur
+          # ex: "[généré] Générer avec : ..." → "[généré]"
+          if text.downcase.includes?("[génér") || text.downcase.includes?("[genere")
+            if m = text.match(/^(\[g[eé]n[eé]r[eé][^\]]*\])/i)
+              text = m[1]
+            end
+          end
+          # Ignorer les lignes de commentaire "Générer avec :" sans marqueur
+          if text.downcase.starts_with?("générer avec") || text.downcase.starts_with?("generer avec") ||
+             text.downcase.starts_with?("generate with")
+            next
+          end
+          pending_comment = text
           next
         end
 
@@ -246,6 +272,21 @@ module CrystalDeploy
     # Les valeurs lues sont masquées à l'affichage (***) mais utilisées comme
     # défaut si l'utilisateur appuie sur Entrée sans saisir de nouvelle valeur.
     #
+    # Préfixes de commandes shell connues qui peuvent se retrouver
+    # par erreur dans un .env (copier-coller depuis un commentaire)
+    SHELL_COMMAND_PREFIXES = %w[
+      crystal\ eval
+      crystal\ run
+      crystal\ build
+      marten
+      bin/
+      ./
+      bash
+      sh\ 
+      echo
+      export
+    ]
+
     def load_env_local(path : String = ".env") : Hash(String, String)
       result = {} of String => String
       return result unless File.exists?(path)
@@ -255,7 +296,11 @@ module CrystalDeploy
         next if stripped.empty? || stripped.starts_with?("#")
         if stripped.includes?("=")
           key, _, value = stripped.partition("=")
-          result[key.strip] = value.strip
+          v = value.strip
+          # Ignorer les valeurs qui ressemblent à des commandes shell
+          # (ex: SECRET_KEY=crystal eval '...' ou PORT=marten serve)
+          next if SHELL_COMMAND_PREFIXES.any? { |prefix| v.starts_with?(prefix) }
+          result[key.strip] = v
         end
       end
 
