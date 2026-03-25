@@ -88,7 +88,8 @@ module CrystalDeploy
     property is_secret : Bool
     property is_generated : Bool  # clé à générer automatiquement (SECRET_KEY, etc.)
     property is_pg : Bool         # variable construite depuis le dialogue PostgreSQL
-    property is_marten_auto : Bool # variable injectée automatiquement par le shard
+    property is_marten_auto : Bool # variable injectée automatiquement depuis config/deploy.yml
+                                   # ou sans signification sur le serveur (APP_HOST, PORT, etc.)
 
     def initialize(@key, @default_value = "", @comment = "",
                    @is_secret = false, @is_generated = false,
@@ -170,10 +171,22 @@ module CrystalDeploy
     #   # [généré]             ← commentaire spécial : génération automatique
     #   # [postgresql]         ← commentaire spécial : construit par le dialogue PG
     #
-    # Variables Marten injectées automatiquement (non demandées) :
-    #   MARTEN_ENV, MARTEN_ALLOWED_HOSTS, MARTEN_SOCKET
-    #
-    MARTEN_AUTO_VARS = %w[MARTEN_ENV MARTEN_ALLOWED_HOSTS MARTEN_SOCKET]
+    # Variables jamais demandées dans le dialogue init :
+    # - injectées automatiquement depuis config/deploy.yml (MARTEN_ENV, MARTEN_ALLOWED_HOSTS,
+    #   MARTEN_SOCKET, APP_HOST, PORT)
+    # - ou sans signification sur le serveur (APP_HOST=127.0.0.1, PORT=3000 sont
+    #   pour le développement local ; en production Marten écoute sur le socket Unix)
+    MARTEN_AUTO_VARS = %w[
+      MARTEN_ENV
+      MARTEN_ALLOWED_HOSTS
+      MARTEN_SOCKET
+      APP_HOST
+      PORT
+    ]
+    # Variables de test local — sans signification sur le serveur de déploiement
+    TEST_ONLY_VARS   = %w[DB_NAME_TEST]
+    # Variables PostgreSQL gérées par le dialogue PG dédié (pas demandées individuellement)
+    # DB_POOL_SIZE est posé comme question normale après le bloc PG
     PG_VARS_MARTEN   = %w[DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME]
     PG_VARS_KEMAL    = %w[DATABASE_URL]
     GENERATED_KEYS   = %w[SECRET_KEY]
@@ -232,7 +245,7 @@ module CrystalDeploy
           key, _, value = stripped.partition("=")
           key = key.strip
 
-          is_marten_auto = MARTEN_AUTO_VARS.includes?(key)
+          is_marten_auto = MARTEN_AUTO_VARS.includes?(key) || TEST_ONLY_VARS.includes?(key)
           is_pg = if marten?
             PG_VARS_MARTEN.includes?(key)
           else
