@@ -17,7 +17,7 @@ module Aloli
           --<env>     Nom de l'environnement défini dans config/deploy.yml (défaut: dev)
                       Les raccourcis par préfixe sont supportés :
                         --dev     → premier environnement dont le nom commence par "dev"
-                        --preprod → premier environnement dont le nom commence par "preprod"
+                        --prep    → premier environnement dont le nom commence par "prep"
                         --prod    → premier environnement dont le nom commence par "prod"
 
         Configuration :
@@ -29,11 +29,11 @@ module Aloli
 
         Exemples :
           deploy generate-ci
-          deploy init --preproduction       # ou raccourci : deploy init --preprod
-          deploy deploy --preproduction     # ou raccourci : deploy deploy --preprod
+          deploy init --preproduction       # ou raccourci : deploy init --prep
+          deploy deploy --preproduction     # ou raccourci : deploy deploy --prep
           deploy deploy --production        # ou raccourci : deploy deploy --prod
           deploy rollback --prod
-          deploy status --preprod
+          deploy status --prep
         USAGE
 
       def self.run(args : Array(String))
