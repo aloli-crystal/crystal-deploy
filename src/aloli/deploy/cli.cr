@@ -30,7 +30,8 @@ module Aloli
               production: ...
 
         Exemples :
-          deploy generate-ci
+          deploy ovh-setup                  # configurer les clés API OVH
+          deploy generate-ci                # générer le workflow GitHub Actions
           deploy init --developpement       # ou raccourcis : --dev, --devel
           deploy init --preproduction       # ou raccourcis : --prep
           deploy deploy --preproduction     # ou raccourcis : --prep
