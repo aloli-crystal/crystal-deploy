@@ -48,10 +48,29 @@ module Aloli
 
           env_values = {} of String => String
 
+          # Variables injectées automatiquement pour Marten (dérivées de la config)
+          # Elles ne doivent pas être posées dans le dialogue interactif.
+          auto_keys = [] of String
+          if @config.marten?
+            marten_env = @env.name   # ex: developpement, preproduction, production
+            marten_host = @env.app_url.sub(/^https?:\/\//, "")
+            marten_socket = @env.socket_path(@config.app_name)
+            env_values["MARTEN_ENV"]           = marten_env
+            env_values["MARTEN_ALLOWED_HOSTS"] = marten_host
+            env_values["MARTEN_SOCKET"]        = marten_socket
+            auto_keys = ["MARTEN_ENV", "MARTEN_ALLOWED_HOSTS", "MARTEN_SOCKET"]
+            log_info "MARTEN_ENV           = #{marten_env}"
+            log_info "MARTEN_ALLOWED_HOSTS = #{marten_host}"
+            log_info "MARTEN_SOCKET        = #{marten_socket}"
+            puts ""
+          end
+
           # Traiter les variables définies dans deploy.yml
           @config.env_vars.each do |var|
             # Les variables build_from_pg sont gérées par le dialogue PostgreSQL dédié
             next if var.build_from_pg
+            # Les variables injectées automatiquement ne sont pas posées dans le dialogue
+            next if auto_keys.includes?(var.key)
 
             default = resolve_default(var)
             label = default ? "#{var.label} [#{default}]" : var.label

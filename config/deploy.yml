@@ -68,13 +68,9 @@ env_vars:
     label: "Clé secrète de l'application (laisser vide pour générer)"
     generate: hex32
 
-  - key: MARTEN_ALLOWED_HOSTS
-    label: "Nom de domaine de l'application (ex: preprod.mon-app.aloli.app)"
-    default_from: app_url   # reprend l'URL sans le https://
-
-  - key: MARTEN_SOCKET
-    label: "Chemin du socket Unix de l'application (laisser vide pour la valeur par défaut)"
-    default_from: socket_path   # ex: /tmp/.mon-app--preproduction.sock
+  # MARTEN_ENV, MARTEN_ALLOWED_HOSTS et MARTEN_SOCKET sont injectés automatiquement
+  # depuis l'environnement choisi (--preproduction, --production, etc.) et app_url.
+  # Ne pas les déclarer ici.
 
   # PostgreSQL — le dialogue dédié demande : hôte OU socket Unix, port, utilisateur,
   # mot de passe, nom de la base. Les variables DB_* sont construites automatiquement.
