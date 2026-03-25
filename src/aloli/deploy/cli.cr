@@ -29,9 +29,10 @@ module Aloli
 
         Exemples :
           deploy generate-ci
-          deploy init --preproduction       # ou raccourci : deploy init --prep
-          deploy deploy --preproduction     # ou raccourci : deploy deploy --prep
-          deploy deploy --production        # ou raccourci : deploy deploy --prod
+          deploy init --developpement       # ou raccourcis : --dev, --devel
+          deploy init --preproduction       # ou raccourcis : --prep
+          deploy deploy --preproduction     # ou raccourcis : --prep
+          deploy deploy --production        # ou raccourcis : --prod
           deploy rollback --prod
           deploy status --prep
         USAGE
