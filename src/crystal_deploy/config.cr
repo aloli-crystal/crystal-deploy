@@ -55,13 +55,20 @@ module CrystalDeploy
     end
   end
 
-  # ─── Configuration DNS ─────────────────────────────────────────────────────
+  # ─── Configuration DNS ──────────────────────────────────────────────────
   # Optionnelle — absente si pas de gestion DNS automatique
+  # Accepte `zone` ou `dns_zone` comme alias pour la zone DNS.
+  # Les commentaires inline YAML (# ...) sur `registrar` sont nettoyés automatiquement.
   class DnsConfig
     include YAML::Serializable
 
-    property registrar : String   # ovh | gandi | cloudflare | ...
+    property registrar : String   # ovh | gandi
     property zone : String        # zone DNS gérée (ex: example.app)
+
+    # Alias de zone pour la compatibilité avec les méthodes appelantes
+    def effective_zone : String
+      zone
+    end
   end
 
   # ─── Définition d'une variable obligatoire ─────────────────────────────────
