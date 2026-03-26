@@ -119,7 +119,9 @@ module CrystalDeploy
           # Créer un .env temporaire sans commentaires ni lignes vides
           _RWE_TMP=$(mktemp /tmp/.env_clean.XXXXXX)
           grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" | grep -v '^[[:space:]]*$' > "${_RWE_TMP}" || true
-          chmod 600 "${_RWE_TMP}"
+          # 644 : le fichier est cree par root mais doit etre lisible par APP_USER
+          # (sudo su -m change l'utilisateur mais pas les droits sur le fichier temporaire)
+          chmod 644 "${_RWE_TMP}"
           sudo su -m "${_RWE_USER}" -c \
             "cd ${_RWE_DIR} && set -a && . ${_RWE_TMP} && set +a && ${_RWE_CMD} 2>&1"
           _RWE_STATUS=$?
