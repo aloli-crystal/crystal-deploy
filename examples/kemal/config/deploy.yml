@@ -1,5 +1,6 @@
 # =============================================================================
 # config/deploy.yml — Exemple pour un projet Kemal
+# Copiez ce fichier dans votre projet : config/deploy.yml
 # =============================================================================
 app_name: mon-app
 repo_url: git@github.com:user/mon-app.git
@@ -7,11 +8,24 @@ crystal_main: src/mon_app.cr
 keep_releases: 10
 framework: kemal
 
+# Adaptateur de base de données
 database: postgresql       # postgresql | mariadb | mysql | sqlite | none
 
+# Registrar DNS (optionnel — supprimer si pas de gestion DNS automatique)
 dns:
   registrar: ovh            # ovh | gandi
   zone: example.app
+
+# Variables d'environnement demandées lors du `init`
+# Les variables DB (DATABASE_URL) sont gérées automatiquement — ne pas les lister ici.
+env_vars:
+  required:
+    - key: SECRET_KEY
+      secret: true
+      generate: hex64   # auto-généré si laissé vide
+  # skip : variables supplémentaires à ignorer lors du dialogue (en plus des défauts)
+  # skip:
+  #   - MA_VARIABLE_LOCALE
 
 environments:
   developpement:

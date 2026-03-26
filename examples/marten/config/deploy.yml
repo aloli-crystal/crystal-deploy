@@ -16,6 +16,17 @@ dns:
   registrar: ovh            # ovh | gandi
   zone: example.app
 
+# Variables d'environnement demandées lors du `init`
+# Les variables DB et Marten sont gérées automatiquement — ne pas les lister ici.
+env_vars:
+  required:
+    - key: SECRET_KEY
+      secret: true
+      generate: hex64   # auto-généré si laissé vide
+  # skip : variables supplémentaires à ignorer lors du dialogue (en plus des défauts)
+  # skip:
+  #   - MA_VARIABLE_LOCALE
+
 environments:
   developpement:
     branch: developpement

@@ -14,11 +14,8 @@ module CrystalDeploy
     class Init
       include Logger
 
-      # Chemin du fichier de règles des variables (dans le shard)
-      ENV_VARS_CONFIG_PATH = File.join(
-        File.dirname(File.dirname(File.dirname(File.dirname(__DIR__)))),
-        "config", "env_vars.yml"
-      )
+      # Les règles des variables sont lues depuis config/deploy.yml (section env_vars:)
+      # combinées avec les skip par défaut embarqués dans le binaire.
 
       def initialize(@config : Config, @env : Environment)
       end
@@ -59,8 +56,8 @@ module CrystalDeploy
 
         env_values = {} of String => String
 
-        # Charger les règles des variables
-        rules = EnvVarsConfig.load(ENV_VARS_CONFIG_PATH)
+        # Règles effectives : required depuis deploy.yml + skip par défaut du shard
+        rules = @config.effective_env_vars
 
         # ── 1. Variables Marten injectées automatiquement ─────────────────────
         if @config.marten?

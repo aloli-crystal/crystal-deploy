@@ -91,8 +91,8 @@ describe CrystalDeploy::EnvVarsConfig do
     rules.skip.should contain("DB_HOST")
   end
 
-  it "retourne un objet vide si le fichier est absent" do
-    rules = CrystalDeploy::EnvVarsConfig.load("/chemin/inexistant/env_vars.yml")
+  it "retourne un objet vide par défaut" do
+    rules = CrystalDeploy::EnvVarsConfig.new
     rules.required.should be_empty
     rules.skip.should be_empty
   end
@@ -102,6 +102,46 @@ describe CrystalDeploy::EnvVarsConfig do
     rules = CrystalDeploy::EnvVarsConfig.from_yaml(yaml)
     rules.skip?("MARTEN_ENV").should be_true
     rules.skip?("SECRET_KEY").should be_false
+  end
+end
+
+describe CrystalDeploy::Config, "#effective_env_vars" do
+  it "inclut les skip par défaut même sans section env_vars" do
+    config = SpecHelper.marten_config
+    rules = config.effective_env_vars
+    rules.skip.should contain("MARTEN_ENV")
+    rules.skip.should contain("DB_HOST")
+    rules.skip.should contain("APP_HOST")
+    rules.skip.should contain("DB_NAME_TEST")
+  end
+
+  it "fusionne les skip utilisateur avec les skip par défaut" do
+    yaml = <<-YAML
+      app_name: test-app
+      repo_url: git@github.com:user/test-app.git
+      crystal_main: src/server.cr
+      framework: marten
+      database: postgresql
+      env_vars:
+        required:
+          - key: SECRET_KEY
+            secret: true
+            generate: hex64
+        skip:
+          - MA_VAR_LOCALE
+      environments:
+        developpement:
+          branch: developpement
+          host: dev.example.com
+          user: deploy
+          app_url: https://dev.test-app.example.app
+    YAML
+    config = CrystalDeploy::Config.from_yaml(yaml)
+    config.environments.each { |name, env| env.name = name }
+    rules = config.effective_env_vars
+    rules.required.first.key.should eq("SECRET_KEY")
+    rules.skip.should contain("MARTEN_ENV")
+    rules.skip.should contain("MA_VAR_LOCALE")
   end
 end
 

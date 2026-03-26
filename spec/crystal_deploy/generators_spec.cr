@@ -12,7 +12,6 @@ private def sample_config_and_env
         host: dev.example.com
         user: deploy
         app_url: https://dev.mon-app.example.app
-    env_vars: []
     YAML
   config = CrystalDeploy::Config.from_yaml(yaml)
   config.environments.each { |name, env| env.name = name }

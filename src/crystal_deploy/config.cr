@@ -95,21 +95,12 @@ module CrystalDeploy
   end
 
   # ─── Règles des variables d'environnement ──────────────────────────────────
-  # Lues depuis config/env_vars.yml du shard
+  # Déclarées dans la section env_vars: de config/deploy.yml
   class EnvVarsConfig
     include YAML::Serializable
 
     property required : Array(EnvVarDef) = [] of EnvVarDef
     property skip : Array(String) = [] of String
-
-    # Charge depuis un fichier YAML
-    def self.load(path : String) : EnvVarsConfig
-      if File.exists?(path)
-        EnvVarsConfig.from_yaml(File.read(path))
-      else
-        EnvVarsConfig.new
-      end
-    end
 
     def initialize
       @required = [] of EnvVarDef
@@ -132,7 +123,7 @@ module CrystalDeploy
     end
   end
 
-  # ─── Configuration principale ──────────────────────────────────────────────
+  # ─── Configuration principale ──────────────────────────────────
   # Lue depuis config/deploy.yml du projet
   class Config
     include YAML::Serializable
@@ -152,7 +143,34 @@ module CrystalDeploy
     # Configuration DNS (optionnelle)
     property dns : DnsConfig? = nil
 
+    # Variables d'environnement (optionnel dans deploy.yml)
+    # L'utilisateur déclare ses required et ses skip supplémentaires.
+    # Les skip par défaut du shard sont toujours appliqués en plus.
+    @[YAML::Field(key: "env_vars")]
+    property env_vars_config : EnvVarsConfig? = nil
+
     property environments : Hash(String, Environment)
+
+    # Skip par défaut embarqués dans le binaire
+    # (variables Marten auto, dev-only, DB gérées par le dialogue)
+    DEFAULT_SKIP = [
+      "MARTEN_ENV", "MARTEN_ALLOWED_HOSTS", "MARTEN_SOCKET",
+      "APP_HOST", "PORT",
+      "DB_NAME_TEST",
+      "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
+      "DATABASE_URL",
+    ]
+
+    # Retourne les règles effectives : required depuis deploy.yml,
+    # skip = DEFAULT_SKIP + skip utilisateur
+    def effective_env_vars : EnvVarsConfig
+      user = env_vars_config || EnvVarsConfig.new
+      merged_skip = (DEFAULT_SKIP + user.skip).uniq
+      result = EnvVarsConfig.new
+      result.required = user.required
+      result.skip = merged_skip
+      result
+    end
 
     # ── Méthodes de commodité ──────────────────────────────────────────────
 
