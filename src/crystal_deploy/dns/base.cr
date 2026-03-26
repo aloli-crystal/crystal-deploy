@@ -36,8 +36,8 @@ module CrystalDeploy
       # Point d'entrée principal : appelé par `init`
       # Gère le flux complet : chargement credentials → dialogue → création CNAME
       def setup : Nil
-        subdomain = @env.dns_subdomain
-        target    = @env.hostname  # CNAME pointe vers le hostname de l'app
+        subdomain = @env.effective_dns_subdomain
+        target    = @env.effective_dns_target
         zone      = @config.dns_zone || @env.dns_zone
 
         return if subdomain.empty? || target.empty?

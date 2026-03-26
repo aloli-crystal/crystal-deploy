@@ -9,6 +9,12 @@ module CrystalDeploy
     property user : String
     property app_url : String
 
+    # Sous-domaine DNS explicite (optionnel — calculé depuis app_url si absent)
+    property dns_subdomain : String? = nil
+
+    # Cible du CNAME (optionnel — utilise `host` si absent, avec point final ajouté)
+    property dns_target : String? = nil
+
     # Nom injecté après désérialisation (clé du hash environments:)
     @[YAML::Field(ignore: true)]
     property name : String = ""
@@ -43,12 +49,18 @@ module CrystalDeploy
       app_url.sub(/^https?:\/\//, "")
     end
 
-    # Sous-domaine DNS (premier label du hostname)
-    def dns_subdomain : String
-      hostname.split(".").first
+    # Sous-domaine DNS effectif : valeur explicite ou premier label du hostname
+    def effective_dns_subdomain : String
+      dns_subdomain || hostname.split(".").first
     end
 
-    # Zone DNS (tout sauf le premier label)
+    # Cible CNAME effective : valeur explicite ou host avec point final
+    def effective_dns_target : String
+      t = dns_target || "#{host}."
+      t.ends_with?(".") ? t : "#{t}."
+    end
+
+    # Zone DNS calculée depuis app_url (tout sauf le premier label)
     def dns_zone : String
       parts = hostname.split(".")
       parts.size > 1 ? parts[1..].join(".") : hostname

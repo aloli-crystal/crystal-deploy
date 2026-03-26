@@ -67,9 +67,14 @@ describe CrystalDeploy::Config do
       env.hostname.should eq("dev.test-app.example.app")
     end
 
-    it "calcule dns_subdomain" do
+    it "calcule effective_dns_subdomain" do
       env = SpecHelper.dev_env(SpecHelper.marten_config)
-      env.dns_subdomain.should eq("dev")
+      env.effective_dns_subdomain.should eq("dev")
+    end
+
+    it "calcule effective_dns_target (fallback sur host)" do
+      env = SpecHelper.dev_env(SpecHelper.marten_config)
+      env.effective_dns_target.should eq("dev.example.com.")
     end
   end
 end
