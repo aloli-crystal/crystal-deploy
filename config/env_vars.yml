@@ -1,0 +1,37 @@
+# =============================================================================
+# config/env_vars.yml — Règles fixes des variables d'environnement
+# Versionné dans le shard crystal-deploy.
+#
+# required : variables toujours demandées lors du `init`, dans cet ordre.
+# skip     : variables jamais demandées (injectées auto ou dev-only).
+#
+# Champs disponibles pour `required` :
+#   key      : nom de la variable (obligatoire)
+#   secret   : masquée à l'affichage (true/false, défaut: false)
+#   generate : générer automatiquement si vide
+#              valeurs : hex32, hex64, password
+# =============================================================================
+
+required:
+  - key: SECRET_KEY
+    secret: true
+    generate: hex64
+
+skip:
+  # Injectées automatiquement depuis config/deploy.yml (framework Marten)
+  - MARTEN_ENV
+  - MARTEN_ALLOWED_HOSTS
+  - MARTEN_SOCKET
+  # Dev local uniquement — sans signification sur le serveur
+  - APP_HOST
+  - PORT
+  # Base de test locale — ignorée au déploiement
+  - DB_NAME_TEST
+  # Variables DB gérées par le dialogue `database`
+  - DB_HOST
+  - DB_PORT
+  - DB_USER
+  - DB_PASSWORD
+  - DB_NAME
+  # Variable DB pour Kemal (construite par le dialogue `database`)
+  - DATABASE_URL

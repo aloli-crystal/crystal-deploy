@@ -1,0 +1,27 @@
+# =============================================================================
+# config/deploy.yml — Exemple pour un projet Kemal
+# =============================================================================
+app_name: mon-app
+repo_url: git@github.com:user/mon-app.git
+crystal_main: src/mon_app.cr
+keep_releases: 10
+framework: kemal
+
+database: postgresql
+
+dns:
+  registrar: ovh
+  zone: example.app
+
+environments:
+  developpement:
+    branch: developpement
+    host: dev.example.com
+    user: deploy
+    app_url: https://dev.mon-app.example.app
+
+  production:
+    branch: production
+    host: prod.example.com
+    user: deploy
+    app_url: https://mon-app.example.app

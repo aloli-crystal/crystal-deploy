@@ -1,0 +1,363 @@
+= crystal-deploy — Architecture et spécification
+:toc: left
+:toc-title: Table des matières
+:toclevels: 3
+:source-highlighter: rouge
+:icons: font
+
+== Objectif
+
+Shard Crystal en ligne de commande pour déployer des applications Marten ou Kemal
+sur tout serveur POSIX (FreeBSD, Linux, etc.).
+Style Capistrano : `releases/`, `current/`, `shared/`.
+
+Simple, testable, extensible.
+
+== Principes fondamentaux
+
+. *Pas de valeur par défaut dans le dialogue* — l'utilisateur saisit tout explicitement.
+. *Le `.env` local n'est jamais lu pour le déploiement* — il appartient au développeur.
+. *`config/deploy.yml` est la seule source de vérité* pour l'infrastructure.
+. *`env_vars.yml` (dans le shard) définit les règles fixes* : obligatoires et ignorées.
+. *Multi-langue via fichiers `.yml`* — zéro dépendance, fallback sur l'anglais.
+. *Extensible* — ajouter un registrar DNS ou un moteur DB sans toucher au cœur.
+
+== Structure des fichiers
+
+[source]
+----
+src/
+  deploy.cr                        # point d'entrée
+  crystal_deploy/
+    cli.cr                         # parsing des arguments
+    config.cr                      # lecture de config/deploy.yml
+    i18n.cr                        # traductions (LANG → fichier YAML)
+    logger.cr                      # affichage coloré + ask/confirm
+    commands/
+      init.cr                      # dialogue interactif + envoi SSH
+      deploy.cr
+      rollback.cr
+      status.cr
+      generate_ci.cr
+    dns/
+      base.cr                      # interface DNS (abstract)
+      ovh.cr                       # implémentation OVH
+    db/
+      base.cr                      # interface DB (abstract)
+      postgresql.cr                # dialogue PostgreSQL (socket ou TCP)
+    generators/
+      nginx.cr
+      rcd.cr
+      github_workflow.cr
+
+config/
+  env_vars.yml                     # règles fixes : obligatoires et ignorées
+
+locales/
+  fr.yml                           # traductions françaises
+  en.yml                           # traductions anglaises (fallback)
+
+examples/
+  marten/
+    config/deploy.yml
+    .env.example
+  kemal/
+    config/deploy.yml
+    .env.example
+
+spec/
+  spec_helper.cr
+  crystal_deploy/
+    config_spec.cr
+    i18n_spec.cr
+    init_spec.cr
+    dns/
+      ovh_spec.cr
+    db/
+      postgresql_spec.cr
+    generators_spec.cr
+----
+
+== Format de `config/deploy.yml`
+
+[source,yaml]
+----
+app_name: mon-app
+repo_url: git@github.com:user/mon-app.git
+crystal_main: src/server.cr
+keep_releases: 10
+framework: marten          # marten | kemal
+
+# Adaptateur de base de données (défaut: postgresql)
+database: postgresql       # postgresql | sqlite | none
+
+# Registrar DNS (optionnel — si absent, pas de gestion DNS)
+dns:
+  registrar: ovh           # ovh | (futur: gandi, cloudflare, etc.)
+  zone: example.app
+
+environments:
+  developpement:
+    branch: developpement
+    host: dev.example.com
+    user: deploy
+    app_url: https://dev.mon-app.example.app
+  production:
+    branch: production
+    host: prod.example.com
+    user: deploy
+    app_url: https://mon-app.example.app
+----
+
+NOTE: Le champ `env_vars:` a disparu de `config/deploy.yml`. Les règles des variables
+sont centralisées dans `config/env_vars.yml` du shard.
+
+== Format de `config/env_vars.yml` (dans le shard)
+
+Ce fichier définit les règles fixes, indépendantes du projet déployé.
+Il est versionné dans le shard et peut être surchargé par le projet.
+
+[source,yaml]
+----
+# Variables toujours demandées lors du `init`, dans cet ordre.
+required:
+  - key: SECRET_KEY
+    secret: true
+    generate: hex64        # généré automatiquement si laissé vide
+
+# Variables jamais demandées (injectées automatiquement ou dev-only).
+skip:
+  - MARTEN_ENV             # injecté depuis config/deploy.yml
+  - MARTEN_ALLOWED_HOSTS   # injecté depuis config/deploy.yml
+  - MARTEN_SOCKET          # injecté depuis config/deploy.yml
+  - APP_HOST               # dev local uniquement
+  - PORT                   # dev local uniquement
+  - DB_NAME_TEST           # base de test locale
+  # Les variables DB_* sont gérées par le dialogue `database`
+  - DB_HOST
+  - DB_PORT
+  - DB_USER
+  - DB_PASSWORD
+  - DB_NAME
+  - DATABASE_URL
+----
+
+== Déroulement du dialogue `init`
+
+[source]
+----
+=== Configuration de l'environnement (.env) ===
+
+[INFO] MARTEN_ENV           = developpement
+[INFO] MARTEN_ALLOWED_HOSTS = dev.mon-app.example.app
+[INFO] MARTEN_SOCKET        = /tmp/.mon-app--developpement.sock
+
+--- Variables obligatoires ---
+SECRET_KEY (généré automatiquement si vide) :
+
+--- Base de données ---
+Mode de connexion :
+  1) Socket Unix
+  2) TCP
+Choix :
+...
+
+--- Variables optionnelles ---
+Voulez-vous configurer les variables optionnelles depuis .env.example ? [O/n]
+
+  Si O → pour chaque variable de .env.example non encore définie et non ignorée :
+    SMTP_HOST — configurer ? [O/n/valeur directe]
+
+--- Récapitulatif ---
+SECRET_KEY          : ***
+DB_HOST             : /var/run/postgresql
+...
+
+Confirmer et envoyer sur le serveur ? [O/n]
+----
+
+=== Règles de saisie
+
+[cols="1,3"]
+|===
+| Situation | Comportement
+
+| Variable `required` avec `generate`
+| Génère automatiquement si l'utilisateur laisse vide
+
+| Variable `required` sans `generate`
+| Redemande jusqu'à obtenir une valeur non vide
+
+| Variable optionnelle (depuis `.env.example`)
+| Proposée avec `[O/n/valeur]` — `n` = ignorée, `O` = saisie demandée
+
+| Variable `secret: true`
+| Affichée comme `***` dans le récapitulatif
+
+| Variable dans `skip`
+| Jamais affichée ni demandée
+|===
+
+== Système de traduction (I18n)
+
+=== Principe
+
+[source,crystal]
+----
+# Détection automatique depuis la variable d'environnement LANG
+# "fr_FR.UTF-8" → "fr" → charge locales/fr.yml
+# Si le fichier n'existe pas → fallback sur locales/en.yml
+lang = ENV.fetch("LANG", "en")[0, 2].downcase
+----
+
+=== Utilisation dans le code
+
+[source,crystal]
+----
+I18n.t("init.section_env")
+I18n.t("db.mode_socket")
+I18n.t("errors.unknown_env", name: "staging")
+----
+
+=== Structure de `locales/fr.yml`
+
+[source,yaml]
+----
+init:
+  section_env: "Configuration de l'environnement (.env)"
+  intro: "Ce dialogue va construire le fichier .env pour [%{env}]."
+  section_required: "Variables obligatoires"
+  section_optional: "Variables optionnelles"
+  ask_optional: "Voulez-vous configurer les variables optionnelles depuis .env.example ?"
+  ask_var: "Configurer %{key} ?"
+  generated: "%{key} généré automatiquement."
+  summary: "Récapitulatif :"
+  confirm_send: "Confirmer et envoyer sur le serveur ?"
+  required_empty: "Ce champ est obligatoire."
+
+db:
+  section: "Base de données"
+  mode_prompt: "Mode de connexion :"
+  mode_socket: "1) Socket Unix (recommandé si PostgreSQL est sur le même serveur)"
+  mode_tcp: "2) TCP (hôte distant)"
+  user_prompt: "Utilisateur PostgreSQL"
+  password_prompt: "Mot de passe PostgreSQL (généré si vide)"
+  db_prompt: "Nom de la base de données"
+  socket_dir_prompt: "Répertoire du socket PostgreSQL"
+  host_prompt: "Hôte PostgreSQL"
+  password_generated: "Mot de passe généré — notez-le, il sera dans le .env."
+
+dns:
+  section: "Configuration DNS"
+  keys_found: "Clés %{registrar} trouvées."
+  confirm_cname: "Créer/vérifier le CNAME %{sub}.%{zone} → %{target} ?"
+  configure_now: "Configurer l'API %{registrar} maintenant ?"
+  keys_ready: "Avez-vous vos trois clés prêtes ?"
+  saved: "Clés sauvegardées dans %{path} (permissions 600)."
+  check_gitignore: "Vérifiez que %{path} est dans votre .gitignore !"
+  cname_exists: "Enregistrement CNAME déjà présent pour %{sub}.%{zone}."
+  cname_created: "CNAME créé : %{sub}.%{zone} → %{target}"
+  zone_refreshed: "Zone DNS rafraîchie."
+  unexpected_response: "Réponse inattendue de l'API %{registrar} : %{body}"
+
+errors:
+  unknown_env: "Environnement inconnu : %{name}"
+  available_envs: "Environnements disponibles : %{list}"
+  config_missing: "Fichier de configuration introuvable : %{path}"
+  ssh_failed: "Connexion SSH impossible : %{host}"
+----
+
+== Interface DNS (extensible)
+
+[source,crystal]
+----
+# dns/base.cr
+abstract class CrystalDeploy::DNS::Base
+  abstract def credentials_present? : Bool
+  abstract def load_credentials : Nil
+  abstract def ask_credentials : Nil
+  abstract def save_credentials : Nil
+  abstract def help_generate_keys(zone : String) : Nil
+  abstract def create_cname(subdomain : String, target : String, zone : String) : Nil
+end
+----
+
+La factory instancie la bonne classe selon `dns.registrar` dans `deploy.yml` :
+
+[source,crystal]
+----
+DNS::Factory.for(config.dns_registrar, env, logger)
+# → DNS::Ovh.new(...)
+# → DNS::Gandi.new(...)   # futur
+----
+
+== Interface DB (extensible)
+
+[source,crystal]
+----
+# db/base.cr
+abstract class CrystalDeploy::DB::Base
+  # Retourne un Hash avec les variables d'environnement construites
+  # ex: {"DB_HOST" => "/var/run/postgresql", "DB_USER" => "mon_app", ...}
+  abstract def run_dialog : Hash(String, String)
+end
+----
+
+La factory instancie selon `database` dans `deploy.yml` :
+
+[source,crystal]
+----
+DB::Factory.for(config.database, config, env, logger)
+# → DB::Postgresql.new(...)
+# → DB::Sqlite.new(...)    # futur
+# → DB::None.new(...)      # pas de base de données
+----
+
+== Variables automatiques selon le framework
+
+[cols="2,1,1"]
+|===
+| Variable | Marten | Kemal
+
+| `MARTEN_ENV`
+| injectée
+| —
+
+| `MARTEN_ALLOWED_HOSTS`
+| injectée
+| —
+
+| `MARTEN_SOCKET`
+| injectée
+| —
+
+| `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+| dialogue DB
+| —
+
+| `DATABASE_URL`
+| —
+| dialogue DB
+|===
+
+== Ce qui est conservé
+
+* `generators/nginx.cr` — fonctionnel, testé
+* `generators/rcd.cr` — fonctionnel, testé
+* `generators/github_workflow.cr` — fonctionnel
+* `ssh/client.cr`, `ssh/remote_runner.cr`, `ssh/remote_script.cr` — fonctionnels
+* `commands/deploy.cr`, `rollback.cr`, `status.cr` — à compléter ultérieurement
+
+== Ce qui est refactorisé
+
+* `config.cr` — ajout `database`, `dns`, suppression `env_vars` (déplacé dans `env_vars.yml`)
+* `commands/init.cr` — simplifié, délègue à `DB::Base` et `DNS::Base`
+* `logger.cr` — intègre `I18n.t()` pour les messages
+* `commands/ovh_setup.cr` — migré dans `dns/ovh.cr`
+
+== Ce qui est supprimé
+
+* `load_env_example` dans `config.cr` — remplacé par lecture directe de `.env.example` dans `init.cr`
+* `EnvExampleVar` struct — supprimée
+* `MARTEN_AUTO_VARS`, `TEST_ONLY_VARS`, `SHELL_COMMAND_PREFIXES` — remplacés par `env_vars.yml`
+* `load_env_local` dans le dialogue init — supprimée (conservée uniquement pour les clés DNS)

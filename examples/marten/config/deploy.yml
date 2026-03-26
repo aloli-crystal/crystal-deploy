@@ -1,0 +1,36 @@
+# =============================================================================
+# config/deploy.yml — Exemple pour un projet Marten
+# Copiez ce fichier dans votre projet : config/deploy.yml
+# =============================================================================
+app_name: mon-app
+repo_url: git@github.com:user/mon-app.git
+crystal_main: src/server.cr
+keep_releases: 10
+framework: marten
+
+# Adaptateur de base de données
+database: postgresql       # postgresql | sqlite | none
+
+# Registrar DNS (optionnel — supprimer si pas de gestion DNS automatique)
+dns:
+  registrar: ovh
+  zone: example.app
+
+environments:
+  developpement:
+    branch: developpement
+    host: dev.example.com
+    user: deploy
+    app_url: https://dev.mon-app.example.app
+
+  preproduction:
+    branch: developpement
+    host: preprod.example.com
+    user: deploy
+    app_url: https://preprod.mon-app.example.app
+
+  production:
+    branch: production
+    host: prod.example.com
+    user: deploy
+    app_url: https://mon-app.example.app

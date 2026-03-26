@@ -1,5 +1,6 @@
 module CrystalDeploy
-  # Représente un environnement de déploiement (developpement, preproduction, production, etc.)
+  # ─── Environnement de déploiement ─────────────────────────────────────────
+  # Représente un environnement défini dans config/deploy.yml
   class Environment
     include YAML::Serializable
 
@@ -8,11 +9,11 @@ module CrystalDeploy
     property user : String
     property app_url : String
 
-    # Dérivés (calculés, non sérialisés)
+    # Nom injecté après désérialisation (clé du hash environments:)
     @[YAML::Field(ignore: true)]
     property name : String = ""
 
-    # Nom complet de l'application pour cet environnement : app-name--env
+    # Nom complet : app-name--env-name
     def full_name(app_name : String) : String
       "#{app_name}--#{name}"
     end
@@ -22,7 +23,7 @@ module CrystalDeploy
       "/home/#{full_name(app_name)}"
     end
 
-    # Chemin du socket Unix de l'application (convention /tmp)
+    # Chemin du socket Unix (convention /tmp)
     def socket_path(app_name : String) : String
       "/tmp/.#{full_name(app_name)}.sock"
     end
@@ -42,63 +43,78 @@ module CrystalDeploy
       app_url.sub(/^https?:\/\//, "")
     end
 
-    # Sous-domaine DNS déduit du hostname (premier label)
+    # Sous-domaine DNS (premier label du hostname)
     def dns_subdomain : String
       hostname.split(".").first
     end
 
-    # Zone DNS déduite du hostname (tout sauf le premier label)
+    # Zone DNS (tout sauf le premier label)
     def dns_zone : String
       parts = hostname.split(".")
       parts.size > 1 ? parts[1..].join(".") : hostname
     end
-
-    # Cible DNS (hostname du serveur, utilisé pour le CNAME)
-    # Peut être surchargée dans deploy.yml si le serveur a un nom différent
-    @[YAML::Field(ignore: true)]
-    property dns_target : String? = nil
-
-    def resolved_dns_target : String
-      dns_target || host
-    end
   end
 
-  # Framework supporté : marten ou kemal (défaut : kemal pour compatibilité ascendante)
-  enum Framework
-    Kemal
-    Marten
+  # ─── Configuration DNS ─────────────────────────────────────────────────────
+  # Optionnelle — absente si pas de gestion DNS automatique
+  class DnsConfig
+    include YAML::Serializable
 
-    def self.from_string(s : String) : Framework
-      case s.downcase
-      when "marten" then Marten
-      when "kemal"  then Kemal
+    property registrar : String   # ovh | gandi | cloudflare | ...
+    property zone : String        # zone DNS gérée (ex: example.app)
+  end
+
+  # ─── Définition d'une variable obligatoire ─────────────────────────────────
+  # Lue depuis config/env_vars.yml (section `required`)
+  class EnvVarDef
+    include YAML::Serializable
+
+    property key : String
+    property secret : Bool = false
+    # Génération automatique si vide : hex32 | hex64 | password
+    property generate : String? = nil
+  end
+
+  # ─── Règles des variables d'environnement ──────────────────────────────────
+  # Lues depuis config/env_vars.yml du shard
+  class EnvVarsConfig
+    include YAML::Serializable
+
+    property required : Array(EnvVarDef) = [] of EnvVarDef
+    property skip : Array(String) = [] of String
+
+    # Charge depuis un fichier YAML
+    def self.load(path : String) : EnvVarsConfig
+      if File.exists?(path)
+        EnvVarsConfig.from_yaml(File.read(path))
       else
-        STDERR.puts "Framework inconnu : '#{s}'. Valeurs acceptées : marten, kemal".colorize(:red)
-        exit 1
+        EnvVarsConfig.new
       end
     end
-  end
 
-  # Variable d'environnement découverte dans .env.example
-  # Représente une ligne du fichier avec son commentaire et sa valeur par défaut
-  struct EnvExampleVar
-    property key : String
-    property default_value : String
-    property comment : String
-    property is_secret : Bool
-    property is_generated : Bool  # clé à générer automatiquement (SECRET_KEY, etc.)
-    property is_pg : Bool         # variable construite depuis le dialogue PostgreSQL
-    property is_marten_auto : Bool # variable injectée automatiquement depuis config/deploy.yml
-                                   # ou sans signification sur le serveur (APP_HOST, PORT, etc.)
+    def initialize
+      @required = [] of EnvVarDef
+      @skip = [] of String
+    end
 
-    def initialize(@key, @default_value = "", @comment = "",
-                   @is_secret = false, @is_generated = false,
-                   @is_pg = false, @is_marten_auto = false)
+    # Retourne true si la variable doit être ignorée dans le dialogue
+    def skip?(key : String) : Bool
+      @skip.includes?(key)
     end
   end
 
-  # Configuration principale lue depuis config/deploy.yml
-  # Contient uniquement les informations d'infrastructure (pas de secrets, pas de variables .env)
+  # ─── Variable lue depuis .env.example ──────────────────────────────────────
+  # Représente une ligne du .env.example du projet (section optionnelle du dialogue)
+  struct EnvExampleVar
+    property key : String
+    property comment : String
+
+    def initialize(@key, @comment = "")
+    end
+  end
+
+  # ─── Configuration principale ──────────────────────────────────────────────
+  # Lue depuis config/deploy.yml du projet
   class Config
     include YAML::Serializable
 
@@ -107,42 +123,48 @@ module CrystalDeploy
     property crystal_main : String
     property crystal_flags : String? = nil
     property keep_releases : Int32 = 10
-    property framework : String = "kemal"   # marten | kemal
+
+    # Framework : marten | kemal
+    property framework : String = "kemal"
+
+    # Base de données : postgresql | sqlite | none
+    property database : String = "postgresql"
+
+    # Configuration DNS (optionnelle)
+    property dns : DnsConfig? = nil
+
     property environments : Hash(String, Environment)
 
-    # Retourne l'enum Framework correspondant
-    def framework_enum : Framework
-      Framework.from_string(framework)
-    end
+    # ── Méthodes de commodité ──────────────────────────────────────────────
 
     def marten? : Bool
-      framework_enum == Framework::Marten
+      framework.downcase == "marten"
     end
 
     def kemal? : Bool
-      framework_enum == Framework::Kemal
+      framework.downcase == "kemal"
     end
 
-    # URL de l'API OVH (toujours la même pour les clients européens)
-    def ovh_api_url : String
-      "https://eu.api.ovh.com/1.0"
+    def dns_registrar : String?
+      dns.try(&.registrar)
     end
 
-    # Charge la configuration depuis un fichier YAML
+    def dns_zone : String?
+      dns.try(&.zone)
+    end
+
+    # ── Chargement ────────────────────────────────────────────────────────────
+
+    # Charge config/deploy.yml depuis le répertoire courant
     def self.load(path : String = "config/deploy.yml") : Config
       unless File.exists?(path)
         STDERR.puts "Erreur : fichier de configuration introuvable : #{path}".colorize(:red)
-        STDERR.puts "Créez config/deploy.yml à partir de l'exemple fourni par le shard.".colorize(:yellow)
+        STDERR.puts "Créez config/deploy.yml à partir des exemples dans examples/".colorize(:yellow)
         exit 1
       end
 
       config = Config.from_yaml(File.read(path))
-
-      # Injecter le nom dans chaque objet Environment
-      config.environments.each do |name, env|
-        env.name = name
-      end
-
+      config.environments.each { |name, env| env.name = name }
       config
     end
 
@@ -157,44 +179,16 @@ module CrystalDeploy
       env
     end
 
-    # ─── Lecture de .env.example ─────────────────────────────────────────────
-    #
-    # Le shard découvre les variables à demander lors du `init` en lisant
-    # le fichier .env.example du projet. Ce fichier est la source de vérité
-    # pour les variables d'environnement de l'application.
-    #
-    # Convention de .env.example :
-    #   # Commentaire sur la variable suivante
-    #   CLE=valeur_par_defaut
-    #   CLE_SECRETE=           ← valeur vide = secret, demander à l'utilisateur
-    #   SECRET_KEY=            ← détecté comme "à générer" par le nom
-    #   # [généré]             ← commentaire spécial : génération automatique
-    #   # [postgresql]         ← commentaire spécial : construit par le dialogue PG
-    #
-    # Variables jamais demandées dans le dialogue init :
-    # - injectées automatiquement depuis config/deploy.yml (MARTEN_ENV, MARTEN_ALLOWED_HOSTS,
-    #   MARTEN_SOCKET, APP_HOST, PORT)
-    # - ou sans signification sur le serveur (APP_HOST=127.0.0.1, PORT=3000 sont
-    #   pour le développement local ; en production Marten écoute sur le socket Unix)
-    MARTEN_AUTO_VARS = %w[
-      MARTEN_ENV
-      MARTEN_ALLOWED_HOSTS
-      MARTEN_SOCKET
-      APP_HOST
-      PORT
-    ]
-    # Variables de test local — sans signification sur le serveur de déploiement
-    TEST_ONLY_VARS   = %w[DB_NAME_TEST]
-    # Variables PostgreSQL gérées par le dialogue PG dédié (pas demandées individuellement)
-    # DB_POOL_SIZE est posé comme question normale après le bloc PG
-    PG_VARS_MARTEN   = %w[DB_HOST DB_PORT DB_USER DB_PASSWORD DB_NAME]
-    PG_VARS_KEMAL    = %w[DATABASE_URL]
-    GENERATED_KEYS   = %w[SECRET_KEY]
-
-    def load_env_example(path : String = ".env.example") : Array(EnvExampleVar)
-      unless File.exists?(path)
-        return default_env_vars
-      end
+    # ── Lecture de .env.example ───────────────────────────────────────────────
+    # Retourne les variables présentes dans .env.example qui ne sont pas dans
+    # la liste `skip` de env_vars.yml et pas déjà dans `already_defined`.
+    # Utilisé pour la section optionnelle du dialogue `init`.
+    def load_env_example(
+      path : String,
+      skip_keys : Array(String),
+      already_defined : Array(String)
+    ) : Array(EnvExampleVar)
+      return [] of EnvExampleVar unless File.exists?(path)
 
       vars = [] of EnvExampleVar
       pending_comment = ""
@@ -202,147 +196,32 @@ module CrystalDeploy
       File.each_line(path) do |line|
         stripped = line.strip
 
-        # Ligne vide : réinitialise le commentaire en attente
         if stripped.empty?
           pending_comment = ""
           next
         end
 
-        # Ligne de commentaire
         if stripped.starts_with?("#")
+          # Extraire le texte du commentaire (sans le #)
           text = stripped.lstrip('#').strip
-          # Ignorer les commentaires de section (ex: ─── Serveur ───────)
-          if text.starts_with?("─") || text.ends_with?("─") || text.includes?("───")
-            pending_comment = ""
-            next
-          end
-          # Ignorer les lignes de commentaire qui sont des commandes shell
-          # (ex: "#   crystal eval '...'" ou "#   marten serve")
-          # Ces lignes sont des exemples de commandes, pas des descriptions de variables
-          is_shell_line = SHELL_COMMAND_PREFIXES.any? { |prefix| text.starts_with?(prefix) }
-          if is_shell_line
-            # Ne pas écraser un commentaire de description déjà en attente
-            next
-          end
-          # Pour les commentaires [généré], ne garder que le marqueur
-          # ex: "[généré] Générer avec : ..." → "[généré]"
-          if text.downcase.includes?("[génér") || text.downcase.includes?("[genere")
-            if m = text.match(/^(\[g[eé]n[eé]r[eé][^\]]*\])/i)
-              text = m[1]
-            end
-          end
-          # Ignorer les lignes de commentaire "Générer avec :" sans marqueur
-          if text.downcase.starts_with?("générer avec") || text.downcase.starts_with?("generer avec") ||
-             text.downcase.starts_with?("generate with")
-            next
-          end
+          # Ignorer les séparateurs de section (─── ... ───)
+          next if text.includes?("─")
+          # Ignorer les lignes de commande shell indentées (ex: #   crystal eval)
+          next if text.starts_with?("crystal ") || text.starts_with?("marten ") ||
+                  text.starts_with?("bin/") || text.starts_with?("./")
+          # Ignorer les marqueurs [auto], [db], [test], [généré]
+          next if text.starts_with?("[")
           pending_comment = text
           next
         end
 
-        # Ligne de variable : CLE=valeur
         if stripped.includes?("=")
-          key, _, value = stripped.partition("=")
+          key, _, _value = stripped.partition("=")
           key = key.strip
-
-          is_marten_auto = MARTEN_AUTO_VARS.includes?(key) || TEST_ONLY_VARS.includes?(key)
-          is_pg = if marten?
-            PG_VARS_MARTEN.includes?(key)
-          else
-            PG_VARS_KEMAL.includes?(key)
-          end
-          is_generated = GENERATED_KEYS.includes?(key) ||
-                         pending_comment.downcase.includes?("[généré") ||
-                         pending_comment.downcase.includes?("[genere")
-          is_secret = value.strip.empty? ||
-                      key.downcase.includes?("secret") ||
-                      key.downcase.includes?("password") ||
-                      key.downcase.includes?("token") ||
-                      (key.downcase.includes?("key") && !key.starts_with?("STRIPE_PK"))
-
-          vars << EnvExampleVar.new(
-            key: key,
-            default_value: value.strip,
-            comment: pending_comment,
-            is_secret: is_secret,
-            is_generated: is_generated,
-            is_pg: is_pg,
-            is_marten_auto: is_marten_auto
-          )
+          next if skip_keys.includes?(key)
+          next if already_defined.includes?(key)
+          vars << EnvExampleVar.new(key: key, comment: pending_comment)
           pending_comment = ""
-        end
-      end
-
-      vars
-    end
-
-    # ─── Lecture du .env local ──────────────────────────────────────────────────
-    #
-    # Lors du `init`, si un fichier .env local existe déjà (par exemple après
-    # un premier `init` ou une copie manuelle), le shard lit les valeurs
-    # existantes pour pré-remplir le dialogue et éviter de ressaisir les secrets.
-    #
-    # Les valeurs lues sont masquées à l'affichage (***) mais utilisées comme
-    # défaut si l'utilisateur appuie sur Entrée sans saisir de nouvelle valeur.
-    #
-    # Préfixes de commandes shell connues qui peuvent se retrouver
-    # par erreur dans un .env (copier-coller depuis un commentaire)
-    SHELL_COMMAND_PREFIXES = %w[
-      crystal\ eval
-      crystal\ run
-      crystal\ build
-      marten
-      bin/
-      ./
-      bash
-      sh\ 
-      echo
-      export
-    ]
-
-    def load_env_local(path : String = ".env") : Hash(String, String)
-      result = {} of String => String
-      return result unless File.exists?(path)
-
-      File.each_line(path) do |line|
-        stripped = line.strip
-        next if stripped.empty? || stripped.starts_with?("#")
-        if stripped.includes?("=")
-          key, _, value = stripped.partition("=")
-          v = value.strip
-          # Ignorer les valeurs qui ressemblent à des commandes shell
-          # (ex: SECRET_KEY=crystal eval '...' ou PORT=marten serve)
-          next if SHELL_COMMAND_PREFIXES.any? { |prefix| v.starts_with?(prefix) }
-          result[key.strip] = v
-        end
-      end
-
-      result
-    end
-
-    # Variables par défaut si .env.example est absent (projet Marten minimal)
-    private def default_env_vars : Array(EnvExampleVar)
-      vars = [] of EnvExampleVar
-
-      if marten?
-        vars << EnvExampleVar.new("MARTEN_ENV",           is_marten_auto: true)
-        vars << EnvExampleVar.new("MARTEN_ALLOWED_HOSTS", is_marten_auto: true)
-        vars << EnvExampleVar.new("MARTEN_SOCKET",        is_marten_auto: true)
-        vars << EnvExampleVar.new("SECRET_KEY",
-          comment: "Clé secrète de l'application",
-          is_secret: true, is_generated: true)
-        PG_VARS_MARTEN.each do |k|
-          vars << EnvExampleVar.new(k, is_pg: true)
-        end
-        vars << EnvExampleVar.new("DB_POOL_SIZE",
-          default_value: "10",
-          comment: "Taille du pool de connexions PostgreSQL")
-      else
-        vars << EnvExampleVar.new("SECRET_KEY",
-          comment: "Clé secrète de l'application",
-          is_secret: true, is_generated: true)
-        PG_VARS_KEMAL.each do |k|
-          vars << EnvExampleVar.new(k, is_pg: true)
         end
       end
 
