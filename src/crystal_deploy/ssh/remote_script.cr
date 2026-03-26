@@ -103,6 +103,20 @@ module CrystalDeploy
           log_info "Verrou acquis (PID $$)."
         }
 
+        # ---------------------------------------------------------------------------
+        # run_with_env USER DIR CMD...
+        # Exécute CMD en tant que USER depuis DIR avec les variables du .env chargées.
+        # Utilise set -a / set +a pour sourcer le .env sans casser les valeurs
+        # contenant des espaces, des = ou des caractères spéciaux.
+        # ---------------------------------------------------------------------------
+        run_with_env() {
+          _RWE_USER="$1"; shift
+          _RWE_DIR="$1"; shift
+          _RWE_CMD="$*"
+          sudo su -m "${_RWE_USER}" -c \
+            "cd ${_RWE_DIR} && set -a && . ${SHARED_DIR}/.env && set +a && ${_RWE_CMD} 2>&1"
+        }
+
         # ==========================================================================
         # INIT
         # ==========================================================================
@@ -130,7 +144,7 @@ module CrystalDeploy
         init_env() {
           log_section "Fichier de configuration .env"
           if [ -f "${SHARED_DIR}/.env" ]; then
-            log_info "Fichier .env déjà présent : ${SHARED_DIR}/.env"
+            log_info "Fichier .env déjà présent : conservé tel quel."
           else
             if [ -n "${ENV_B64}" ]; then
               printf '%s' "${ENV_B64}" | base64 -d | sudo tee "${SHARED_DIR}/.env" >/dev/null
@@ -217,14 +231,12 @@ module CrystalDeploy
         run_seed() {
           [ ! -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && return 0
           [ ! -f "${SHARED_DIR}/.env" ] && return 0
-          ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
           if [ "${FRAMEWORK}" = "marten" ]; then
             # Seed Marten : commande `seed` si définie dans la CLI
             if [ -f "${CURRENT_LINK}/seed.cr" ] || grep -rq 'command_name.*seed' \
                 "${CURRENT_LINK}/src/" 2>/dev/null; then
               log_section "Seed Marten"
-              sudo su -m "${APP_USER}" -c \
-                "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+              run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} seed" || \
                 log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
             else
               log_info "Pas de seed Marten détecté."
@@ -232,8 +244,7 @@ module CrystalDeploy
           else
             # Kemal : seed via le binaire
             log_section "Seed"
-            sudo su -m "${APP_USER}" -c \
-              "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+            run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} seed" || \
               log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
           fi
         }
@@ -245,11 +256,9 @@ module CrystalDeploy
         init_database() {
           create_database
           if [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && [ -f "${SHARED_DIR}/.env" ]; then
-            ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
             if [ "${FRAMEWORK}" = "marten" ]; then
               log_section "Migrations Marten"
-              sudo su -m "${APP_USER}" -c \
-                "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || \
+              run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} migrate" || \
                 log_warn "Migrations retournées une erreur (peut-être déjà appliquées)."
             fi
             run_seed
@@ -485,9 +494,7 @@ module CrystalDeploy
           [ ! -f "${RELEASE_DIR}/bin/${APP_FULL_NAME}" ] && return 0
           [ ! -f "${SHARED_DIR}/.env" ] && return 0
           log_section "Migrations Marten"
-          ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
-          sudo su -m "${APP_USER}" -c \
-            "cd ${RELEASE_DIR} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || {
+          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/${APP_FULL_NAME} migrate" || {
             log_error "Échec des migrations. Déploiement annulé."
             exit 1
           }
@@ -629,9 +636,7 @@ module CrystalDeploy
           if [ "${FRAMEWORK}" = "marten" ] && [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] \
               && [ -f "${SHARED_DIR}/.env" ]; then
             log_section "Migrations Marten (rollback vers release précédente)"
-            ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
-            sudo su -m "${APP_USER}" -c \
-              "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || \
+            run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} migrate" || \
               log_warn "Migrations de rollback retournées une erreur."
           fi
           sudo service "${SERVICE_RC_NAME}" start
