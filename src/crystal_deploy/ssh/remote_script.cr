@@ -107,10 +107,11 @@ module CrystalDeploy
         # run_with_env USER DIR CMD...
         # Exécute CMD en tant que USER depuis DIR avec les variables du .env chargées.
         #
-        # Stratégie : on génère un fichier .env temporaire épuré (sans commentaires
-        # ni lignes vides) puis on le source avec set -a / set +a.
-        # Cela évite l'erreur "set: Le nom de la variable doit commencer par une lettre"
-        # que /bin/sh (dash/FreeBSD sh) lève sur les lignes de commentaires.
+        # Stratégie : on génère un script wrapper /bin/sh temporaire qui exporte
+        # chaque variable du .env avec 'export KEY=VALUE' ligne par ligne.
+        # Cela évite l'erreur "Nom de variable incorrect" que FreeBSD /bin/sh lève
+        # avec 'set -a' (qui exporte aussi les variables héritées dont les noms
+        # commencent par '_' ou d'autres caractères non-alphabétiques).
         # ---------------------------------------------------------------------------
         run_with_env() {
           _RWE_USER="$1"; shift
