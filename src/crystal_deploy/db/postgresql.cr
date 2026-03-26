@@ -128,6 +128,66 @@ module CrystalDeploy
       private def generate_password : String
         Base64.strict_encode(Random::Secure.random_bytes(15)).tr("+/=", "")[0, 20]
       end
+
+      # ── Méthodes de test (accesseurs pour les specs) ──────────────────────
+      # Exposent la logique de génération des variables sans passer par le
+      # dialogue interactif (stdin). Utilisées uniquement dans les specs.
+
+      def socket_vars_for_test(
+        socket_dir : String, user : String, pass : String,
+        db : String, pool_size : String
+      ) : Hash(String, String)
+        run_socket_dialog_pure(socket_dir, user, pass, db, pool_size)
+      end
+
+      def tcp_vars_for_test(
+        host : String, user : String, pass : String,
+        db : String, pool_size : String
+      ) : Hash(String, String)
+        run_tcp_dialog_pure(host, user, pass, db, pool_size)
+      end
+
+      # Logique pure de run_socket_dialog sans appel à ask_with_suggestion
+      private def run_socket_dialog_pure(
+        socket_dir : String, user : String, pass : String,
+        db : String, pool_size : String
+      ) : Hash(String, String)
+        if @config.marten?
+          {
+            "DB_HOST"      => socket_dir,
+            "DB_PORT"      => "5432",
+            "DB_USER"      => user,
+            "DB_PASSWORD"  => pass,
+            "DB_NAME"      => db,
+            "DB_POOL_SIZE" => pool_size,
+          }
+        else
+          {
+            "DATABASE_URL" => "postgresql://#{user}:#{pass}@/#{db}?host=#{socket_dir}",
+          }
+        end
+      end
+
+      # Logique pure de run_tcp_dialog sans appel à ask_required
+      private def run_tcp_dialog_pure(
+        host : String, user : String, pass : String,
+        db : String, pool_size : String
+      ) : Hash(String, String)
+        if @config.marten?
+          {
+            "DB_HOST"      => host,
+            "DB_PORT"      => "5432",
+            "DB_USER"      => user,
+            "DB_PASSWORD"  => pass,
+            "DB_NAME"      => db,
+            "DB_POOL_SIZE" => pool_size,
+          }
+        else
+          {
+            "DATABASE_URL" => "postgresql://#{user}:#{pass}@#{host}/#{db}",
+          }
+        end
+      end
     end
   end
 end
