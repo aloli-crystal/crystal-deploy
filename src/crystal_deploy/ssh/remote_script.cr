@@ -235,24 +235,29 @@ module CrystalDeploy
 
         # ---------------------------------------------------------------------------
         # run_seed : exécute le seed après activation de la release
-        # Marten : commande `seed` si définie dans la CLI
-        # Kemal  : commande `seed` via le binaire
+        # Marten : `bin/marten seed` si la commande est définie dans le projet
+        # Kemal  : `./bin/${APP_FULL_NAME} seed` via le binaire applicatif
         # ---------------------------------------------------------------------------
         run_seed() {
-          [ ! -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && return 0
           [ ! -f "${SHARED_DIR}/.env" ] && return 0
           if [ "${FRAMEWORK}" = "marten" ]; then
-            # Seed Marten : commande `seed` si définie dans la CLI
+            # Seed Marten : commande `seed` via bin/marten si définie dans le projet
+            MARTEN_BIN="${CURRENT_LINK}/bin/marten"
+            if [ ! -f "${MARTEN_BIN}" ]; then
+              log_info "bin/marten introuvable. Seed ignoré."
+              return 0
+            fi
             if [ -f "${CURRENT_LINK}/seed.cr" ] || grep -rq 'command_name.*seed' \
                 "${CURRENT_LINK}/src/" 2>/dev/null; then
               log_section "Seed Marten"
-              run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} seed" || \
+              run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/marten seed" || \
                 log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
             else
               log_info "Pas de seed Marten détecté."
             fi
           else
-            # Kemal : seed via le binaire
+            # Kemal : seed via le binaire applicatif
+            [ ! -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && return 0
             log_section "Seed"
             run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} seed" || \
               log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
@@ -265,11 +270,16 @@ module CrystalDeploy
         # ---------------------------------------------------------------------------
         init_database() {
           create_database
-          if [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && [ -f "${SHARED_DIR}/.env" ]; then
+          if [ -f "${SHARED_DIR}/.env" ]; then
             if [ "${FRAMEWORK}" = "marten" ]; then
-              log_section "Migrations Marten"
-              run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/${APP_FULL_NAME} migrate" || \
-                log_warn "Migrations retournées une erreur (peut-être déjà appliquées)."
+              MARTEN_BIN="${CURRENT_LINK}/bin/marten"
+              if [ -f "${MARTEN_BIN}" ]; then
+                log_section "Migrations Marten"
+                run_with_env "${APP_USER}" "${CURRENT_LINK}" "./bin/marten migrate" || \
+                  log_warn "Migrations retournées une erreur (peut-être déjà appliquées)."
+              else
+                log_warn "bin/marten introuvable dans ${CURRENT_LINK}/bin/. Migrations ignorées."
+              fi
             fi
             run_seed
           fi
@@ -498,13 +508,23 @@ module CrystalDeploy
         # ---------------------------------------------------------------------------
         # run_migrations : exécuté après compilation, avant activation de la release
         # Marten uniquement — Kemal gère le schéma via init_database
+        #
+        # IMPORTANT : on utilise `bin/marten migrate` (le binaire Marten lui-même)
+        # et non `./bin/${APP_FULL_NAME} migrate`. Le binaire applicatif ne définit
+        # pas de commande CLI `migrate` — il démarre le serveur web par défaut.
+        # `bin/marten` est installé par `shards install` dans le répertoire du projet.
         # ---------------------------------------------------------------------------
         run_migrations() {
           [ "${FRAMEWORK}" != "marten" ] && return 0
-          [ ! -f "${RELEASE_DIR}/bin/${APP_FULL_NAME}" ] && return 0
           [ ! -f "${SHARED_DIR}/.env" ] && return 0
+          # bin/marten est disponible après `shards install` (script Ruby/Crystal)
+          MARTEN_BIN="${RELEASE_DIR}/bin/marten"
+          if [ ! -f "${MARTEN_BIN}" ]; then
+            log_warn "bin/marten introuvable dans ${RELEASE_DIR}/bin/. Vérifiez que shards install s'est exécuté."
+            return 0
+          fi
           log_section "Migrations Marten"
-          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/${APP_FULL_NAME} migrate" || {
+          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten migrate" || {
             log_error "Échec des migrations. Déploiement annulé."
             exit 1
           }
