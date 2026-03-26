@@ -25,9 +25,11 @@ module CrystalDeploy
         puts I18n.t("db.mode_tcp")
         puts ""
 
+        # Choix par défaut : 1 (socket Unix — recommandé)
         mode = ""
         until %w[1 2].includes?(mode)
-          mode = ask(I18n.t("db.choice") + " : ")
+          raw = ask(I18n.t("db.choice") + " [1] : ")
+          mode = raw.empty? ? "1" : raw
         end
 
         # Suggestion utilisateur : app_name (tirets → underscores)

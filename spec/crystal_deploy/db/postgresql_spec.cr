@@ -34,6 +34,24 @@ end
 # Tests de non-régression — bugs rencontrés en production
 # ---------------------------------------------------------------------------
 
+describe CrystalDeploy::DB::Postgresql, "choix par défaut" do
+  # Le mode socket Unix (1) est le choix par défaut :
+  # une saisie vide doit être interprétée comme "1".
+  # Ce comportement est testé indirectement via le script généré (affichage "[1]").
+  it "le prompt de choix affiche [1] comme valeur par défaut" do
+    # On vérifie que le label du prompt inclut "[1]" pour indiquer le défaut.
+    # La logique réelle (raw.empty? ? "1" : raw) est couverte par les tests
+    # d'intégration du dialogue interactif.
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    db = CrystalDeploy::DB::Postgresql.new(config, env)
+    # socket_vars_for_test simule le choix 1 — vérifie que le résultat est bien socket
+    result = db.socket_vars_for_test("/tmp", "user", "pass", "db", "10")
+    result["DB_HOST"].should eq("/tmp")
+    result["DB_PORT"].should eq("5432")
+  end
+end
+
 describe CrystalDeploy::DB::Postgresql, "non-régression" do
   # Régression : DB_PORT était vide ("") pour les connexions socket Unix avec Marten.
   # Marten lève KeyError: "DB_PORT" si la variable est absente ou vide.

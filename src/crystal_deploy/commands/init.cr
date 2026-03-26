@@ -81,7 +81,7 @@ module CrystalDeploy
         puts ""
 
         # ── 4. Variables optionnelles depuis .env.example ─────────────────────
-        if confirm?(I18n.t("init.ask_optional"))
+        if confirm_no?(I18n.t("init.ask_optional"))
           puts ""
           ask_optional_vars(rules, env_values)
         end
