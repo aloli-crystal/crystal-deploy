@@ -38,7 +38,7 @@ module CrystalDeploy
       # ── Privé ──────────────────────────────────────────────────────────────
 
       private def run_socket_dialog(user : String, pass : String, db : String) : Hash(String, String)
-        socket_dir = ask_required(I18n.t("db.socket_dir_prompt"))
+        socket_dir = ask_with_suggestion(I18n.t("db.socket_dir_prompt"), "/tmp")
         log_info I18n.t("db.socket_info", path: socket_dir)
 
         if @config.marten?
