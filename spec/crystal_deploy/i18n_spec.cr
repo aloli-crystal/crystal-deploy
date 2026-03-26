@@ -57,9 +57,9 @@ describe CrystalDeploy::I18n do
       result.should eq("cle.inexistante")
     end
 
-    it "fait le fallback sur l'anglais si la clé manque en fr" do
-      # Forcer une langue inexistante pour tester le fallback
-      CrystalDeploy::I18n.lang = "de"
+    it "fait le fallback sur l'anglais si la langue n'a pas de fichier de locale" do
+      # Utiliser une langue sans fichier de locale (xx n'existe pas)
+      CrystalDeploy::I18n.lang = "xx"
       result = CrystalDeploy::I18n.t("db.section")
       result.should eq("Database")
     end

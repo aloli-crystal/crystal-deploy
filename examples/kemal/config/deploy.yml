@@ -7,10 +7,10 @@ crystal_main: src/mon_app.cr
 keep_releases: 10
 framework: kemal
 
-database: postgresql
+database: postgresql       # postgresql | mariadb | mysql | sqlite | none
 
 dns:
-  registrar: ovh
+  registrar: ovh            # ovh | gandi
   zone: example.app
 
 environments:

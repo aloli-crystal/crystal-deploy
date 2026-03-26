@@ -76,6 +76,8 @@ module CrystalDeploy
         case registrar.downcase
         when "ovh"
           Ovh.new(config, env)
+        when "gandi"
+          Gandi.new(config, env)
         else
           STDERR.puts I18n.t("errors.unknown_registrar", name: registrar).colorize(:red)
           exit 1

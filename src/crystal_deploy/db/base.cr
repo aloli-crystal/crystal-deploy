@@ -42,13 +42,14 @@ module CrystalDeploy
         when "postgresql", "postgres", "pg"
           Postgresql.new(config, env)
         when "sqlite"
-          # Futur : Sqlite.new(config, env)
-          STDERR.puts "SQLite : pas encore implémenté.".colorize(:yellow)
-          None.new(config, env)
+          Sqlite.new(config, env)
+        when "mariadb", "mysql"
+          Mariadb.new(config, env)
         when "none", ""
           None.new(config, env)
         else
           STDERR.puts I18n.t("errors.unknown_database", name: database).colorize(:red)
+          STDERR.puts "Valeurs acceptées : postgresql, mariadb, mysql, sqlite, none".colorize(:yellow)
           exit 1
         end
       end

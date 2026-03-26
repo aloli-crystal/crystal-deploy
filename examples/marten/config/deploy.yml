@@ -9,11 +9,11 @@ keep_releases: 10
 framework: marten
 
 # Adaptateur de base de données
-database: postgresql       # postgresql | sqlite | none
+database: postgresql       # postgresql | mariadb | mysql | sqlite | none
 
 # Registrar DNS (optionnel — supprimer si pas de gestion DNS automatique)
 dns:
-  registrar: ovh
+  registrar: ovh            # ovh | gandi
   zone: example.app
 
 environments:

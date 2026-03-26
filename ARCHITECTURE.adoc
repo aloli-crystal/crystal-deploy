@@ -340,6 +340,24 @@ DB::Factory.for(config.database, config, env, logger)
 | dialogue DB
 |===
 
+== Langues disponibles
+
+Détection automatique depuis `LANG` (ex: `fr_FR.UTF-8` → `fr`).
+Fallback automatique sur `en` si la langue n'est pas disponible.
+
+[cols="1,2"]
+|===
+| Code | Langue
+
+| `fr` | Français
+| `en` | Anglais (fallback)
+| `es` | Espagnol
+| `de` | Allemand
+| `pt` | Portugais
+| `it` | Italien
+| `nl` | Néerlandais (belge flamand)
+|===
+
 == Ce qui est conservé
 
 * `generators/nginx.cr` — fonctionnel, testé
