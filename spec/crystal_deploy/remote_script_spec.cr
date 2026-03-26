@@ -5,6 +5,21 @@ require "../spec_helper"
 # ---------------------------------------------------------------------------
 
 describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
+  # Régression : sudo su -m utilisait le shell de l'utilisateur (zsh sur le serveur).
+  # zsh interprète 'set -a' différemment de /bin/sh et lève l'erreur
+  # "set: Le nom de la variable doit commencer par une lettre" sur des variables
+  # d'environnement système héritées.
+  # Correction : forcer /bin/sh explicitement via 'sudo su -m USER /bin/sh -c ...'.
+  it "run_with_env force /bin/sh (independamment du shell de l'utilisateur)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    content.should contain("su -m")
+    content.should contain("/bin/sh -c")
+    # Ne doit PAS utiliser sudo su -m USER -c sans /bin/sh explicite
+    content.should_not match(/su -m "\$\{_RWE_USER\}" -c/)
+  end
+
   # Régression : run_with_env créait le fichier temporaire avec chmod 600.
   # APP_USER (ex: deploy) ne pouvait pas le lire → le sourçage échouait
   # silencieusement → "set: Le nom de la variable doit commencer par une lettre".
