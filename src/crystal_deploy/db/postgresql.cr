@@ -34,14 +34,15 @@ module CrystalDeploy
         suggested_user = @config.app_name.gsub("-", "_")
         # Suggestion base : app_name__env_name (ex: les_amis_de_joseph__developpement)
         suggested_db = "#{suggested_user}__#{@env.name.gsub("-", "_")}"
-        pg_user = ask_with_suggestion(I18n.t("db.user_prompt"), suggested_user)
-        pg_pass = ask_password
-        pg_db   = ask_with_suggestion(I18n.t("db.db_prompt"), suggested_db)
+        pg_user      = ask_with_suggestion(I18n.t("db.user_prompt"), suggested_user)
+        pg_pass      = ask_password
+        pg_db        = ask_with_suggestion(I18n.t("db.db_prompt"), suggested_db)
+        pg_pool_size = ask_with_suggestion(I18n.t("db.pool_size_prompt"), "10")
 
         if mode == "1"
-          run_socket_dialog(pg_user, pg_pass, pg_db)
+          run_socket_dialog(pg_user, pg_pass, pg_db, pg_pool_size)
         else
-          run_tcp_dialog(pg_user, pg_pass, pg_db)
+          run_tcp_dialog(pg_user, pg_pass, pg_db, pg_pool_size)
         end
       end
 
@@ -52,17 +53,18 @@ module CrystalDeploy
       # quand DB_HOST commence par '/' — le driver pg construit alors le chemin
       # /DB_HOST/.s.PGSQL.DB_PORT pour se connecter.
       # DB_PORT ne doit PAS être vide sinon Marten lève KeyError: "DB_PORT".
-      private def run_socket_dialog(user : String, pass : String, db : String) : Hash(String, String)
+      private def run_socket_dialog(user : String, pass : String, db : String, pool_size : String) : Hash(String, String)
         socket_dir = ask_with_suggestion(I18n.t("db.socket_dir_prompt"), "/tmp")
         log_info I18n.t("db.socket_info", path: socket_dir)
 
         if @config.marten?
           {
-            "DB_HOST"     => socket_dir,
-            "DB_PORT"     => "5432",
-            "DB_USER"     => user,
-            "DB_PASSWORD" => pass,
-            "DB_NAME"     => db,
+            "DB_HOST"      => socket_dir,
+            "DB_PORT"      => "5432",
+            "DB_USER"      => user,
+            "DB_PASSWORD"  => pass,
+            "DB_NAME"      => db,
+            "DB_POOL_SIZE" => pool_size,
           }
         else
           # Kemal : DATABASE_URL avec paramètre host= pour socket Unix
@@ -72,16 +74,17 @@ module CrystalDeploy
         end
       end
 
-      private def run_tcp_dialog(user : String, pass : String, db : String) : Hash(String, String)
+      private def run_tcp_dialog(user : String, pass : String, db : String, pool_size : String) : Hash(String, String)
         host = ask_required(I18n.t("db.host_prompt"))
 
         if @config.marten?
           {
-            "DB_HOST"     => host,
-            "DB_PORT"     => "5432",
-            "DB_USER"     => user,
-            "DB_PASSWORD" => pass,
-            "DB_NAME"     => db,
+            "DB_HOST"      => host,
+            "DB_PORT"      => "5432",
+            "DB_USER"      => user,
+            "DB_PASSWORD"  => pass,
+            "DB_NAME"      => db,
+            "DB_POOL_SIZE" => pool_size,
           }
         else
           {

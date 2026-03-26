@@ -157,7 +157,7 @@ module CrystalDeploy
       "MARTEN_ENV", "MARTEN_ALLOWED_HOSTS", "MARTEN_SOCKET",
       "APP_HOST", "APP_PORT", "PORT",
       "DB_NAME_TEST",
-      "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_POOL_SIZE",
+      "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
       "DATABASE_URL",
     ]
 

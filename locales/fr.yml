@@ -22,6 +22,7 @@ db:
   password_prompt: "Mot de passe PostgreSQL (généré si vide)"
   db_prompt: "Nom de la base de données"
   socket_dir_prompt: "Répertoire du socket PostgreSQL"
+  pool_size_prompt: "Taille du pool de connexions PostgreSQL"
   host_prompt: "Hôte PostgreSQL"
   password_generated: "Mot de passe généré — notez-le, il sera dans le .env."
   socket_info: "Connexion via socket Unix : %{path}/.s.PGSQL.5432"
