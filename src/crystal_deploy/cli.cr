@@ -44,8 +44,16 @@ module CrystalDeploy
       new.run(args)
     end
 
+    DEPLOY_YML_EXAMPLE = {{ read_file("#{__DIR__}/../../../examples/marten/config/deploy.yml") }}
+
     def run(args : Array(String))
-      if args.empty? || args.includes?("--help") || args.includes?("-h")
+      if args.empty?
+        puts USAGE
+        generate_deploy_yml_example
+        exit 0
+      end
+
+      if args.includes?("--help") || args.includes?("-h")
         puts USAGE
         exit 0
       end
@@ -102,6 +110,17 @@ module CrystalDeploy
         STDERR.puts I18n.t("errors.unknown_env", name: command).colorize(:red)
         STDERR.puts "Commandes disponibles : init, deploy, rollback, status, generate-ci, dns-setup".colorize(:yellow)
         exit 1
+      end
+    end
+
+    private def generate_deploy_yml_example
+      dest = "config/deploy.yml"
+      if File.exists?(dest)
+        puts "\n[INFO] #{dest} existe déjà — non modifié.".colorize(:cyan)
+      else
+        Dir.mkdir_p("config")
+        File.write(dest, DEPLOY_YML_EXAMPLE)
+        puts "\n[OK] #{dest} généré — adaptez-le à votre projet puis relancez :\n     bin/deploy init --<env>".colorize(:green)
       end
     end
 
