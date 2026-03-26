@@ -475,7 +475,10 @@ module CrystalDeploy
           cat > "${COMPILE_SCRIPT}" << COMPILE_EOF
         #!/bin/sh
         cd "${RELEASE_DIR}" || exit 1
-        shards install --production >> "${COMPILE_LOG}" 2>&1
+        # Si le shard.lock est obsolete (source changee), shards install echoue.
+        # On tente d'abord install, et en cas d'echec on fait update pour regenerer le lock.
+        shards install --production >> "${COMPILE_LOG}" 2>&1 || \
+          shards update --production >> "${COMPILE_LOG}" 2>&1
           # CRYSTAL_FLAGS vaut "-" quand absent (sentinelle pour éviter le décalage d'arguments)
           CRYSTAL_FLAGS_REAL=$([ "${CRYSTAL_FLAGS}" = "-" ] && echo "" || echo "${CRYSTAL_FLAGS}")
           crystal build ${CRYSTAL_FLAGS_REAL} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
