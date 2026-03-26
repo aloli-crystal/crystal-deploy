@@ -124,8 +124,9 @@ env_vars:
 #     label: "UNIX_SOCKET"
 #     default_from: socket_path
 
-ovh:
-  dns_zone: example.app
+dns:
+  registrar: ovh
+  zone: example.app
 ----
 <1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--preproduction`
 <2> Valeurs acceptées : `marten` ou `kemal`. Adapte NGINX, migrations, CI et variables `.env`
@@ -325,61 +326,16 @@ L'architecture du shard repose sur une séparation stricte des responsabilités 
 Ne dupliquez **jamais** les informations de `config/deploy.yml` (comme les URLs ou les hôtes) dans votre `.env` local. Le binaire `deploy` lit directement le fichier YAML pour orchestrer les déploiements.
 ====
 
-[#dns-ovh]
-== DNS OVH (optionnel)
+== Configuration DNS (optionnel)
 
-=== Génération guidée des clés API
+Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation en utilisant l'API REST de votre registrar.
 
-Le shard propose un assistant interactif pour créer et configurer les clés API OVH en une seule commande :
+=== Registrars supportés
 
-[source,sh]
-----
-bin/deploy ovh-setup
-----
+* **OVH** : Nécessite 3 clés (`OVH_APP_KEY`, `OVH_APP_SECRET`, `OVH_CONSUMER_KEY`)
+* **Gandi** : Nécessite 1 clé (`GANDI_PAT` - Personal Access Token)
 
-Cet assistant :
-
-. Ouvre l'URL de création d'application OVH et attend votre confirmation
-. Demande l'Application Key et l'Application Secret obtenus
-. Appelle automatiquement l'API OVH pour générer le Consumer Key avec les droits DNS minimaux
-. Ouvre l'URL de validation des droits et attend votre confirmation
-. Sauvegarde les trois clés dans votre `.env` local avec les permissions `600`
-
-Si des clés existent déjà dans le `.env`, l'assistant vous propose de les remplacer avant de continuer.
-
-
-
-Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation,
-en utilisant l'API REST OVH.
-
-=== Clés OVH dans le `.env` local
-
-Les clés API OVH sont lues depuis votre **`.env` local** (à la racine de votre projet),
-dans cet ordre de priorité :
-
-[cols="1,3"]
-|===
-| Source | Description
-
-| Variables d'environnement shell
-| `export OVH_APP_KEY=...` dans votre shell
-
-| `.env` local (recommandé)
-| Fichier `.env` à la racine du projet — **ne pas versionner**
-
-| `config/.ovhrc` (legacy)
-| Ancien emplacement, conservé pour compatibilité. Un avertissement invite à migrer vers `.env`.
-|===
-
-Ajoutez les trois variables dans votre `.env` local :
-
-[source,sh]
-----
-# Clés API OVH — NE PAS VERSIONNER
-OVH_APP_KEY=votre_app_key
-OVH_APP_SECRET=votre_app_secret
-OVH_CONSUMER_KEY=votre_consumer_key
-----
+Les clés sont lues depuis votre fichier **`.env` local**. Si elles sont absentes, le dialogue interactif vous les demandera lors de l'`init` et les sauvegardera automatiquement dans votre `.env` local.
 
 [IMPORTANT]
 ====
@@ -390,56 +346,6 @@ Vérifiez que `.env` est bien dans votre `.gitignore` :
 echo ".env" >> .gitignore
 ----
 ====
-
-Si les clés sont absentes du `.env`, le dialogue interactif les demande lors de l'`init`
-et les sauvegarde automatiquement dans votre `.env` local.
-
-=== Génération des clés OVH
-
-**Étape 1** — Créez l'application sur https://eu.api.ovh.com/createApp/
-
-Vous obtenez une `Application Key` et un `Application Secret`.
-
-**Étape 2** — Générez le Consumer Key :
-
-[source,sh]
-----
-curl -X POST https://eu.api.ovh.com/1.0/auth/credential \
-  -H 'Content-Type: application/json' \
-  -H 'X-Ovh-Application: VOTRE_APP_KEY' \
-  -d '{
-    "accessRules": [
-      {"method": "GET",  "path": "/domain/zone/example.app"},
-      {"method": "GET",  "path": "/domain/zone/example.app/record"},
-      {"method": "POST", "path": "/domain/zone/example.app/record"},
-      {"method": "POST", "path": "/domain/zone/example.app/refresh"}
-    ],
-    "redirection": "https://www.ovhcloud.com/fr/"
-  }'
-----
-
-Ouvrez la `validationUrl` retournée dans votre navigateur pour valider.
-
-**Étape 3** — Ajoutez les trois clés dans votre `.env` local (voir ci-dessus).
-
-=== Configuration dans `deploy.yml`
-
-Pour activer la création automatique du CNAME, ajoutez dans chaque environnement concerné :
-
-[source,yaml]
-----
-environments:
-  preproduction:
-    branch: developpement
-    host: deploy.example.com
-    user: deploy
-    app_url: https://preprod.mon-app.example.app
-    dns_subdomain: preprod.mon-app   # ← sous-domaine à créer
-    dns_target: deploy.example.com.     # ← cible du CNAME (point final obligatoire)
-
-ovh:
-  dns_zone: example.app                # ← zone DNS OVH
-----
 
 == GitHub Actions (CI/CD automatique)
 
