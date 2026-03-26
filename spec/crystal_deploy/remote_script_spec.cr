@@ -20,8 +20,9 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     # run_with_env doit utiliser sudo su sans -m (pas de preservation de l'env root)
     # On extrait uniquement la fonction run_with_env pour le verifier
     rwe_start = content.index("run_with_env() {").not_nil!
-    rwe_end   = content.index("\n        }", rwe_start).not_nil! + 9
-    rwe_body  = content[rwe_start..rwe_end]
+    # Chercher la ligne '        }' qui ferme run_with_env (apres son debut)
+    rwe_close = content.index("\n        }\n", rwe_start)
+    rwe_body  = rwe_close ? content[rwe_start..rwe_close] : content[rwe_start..]
     rwe_body.should contain("sudo su \"${_RWE_USER}\"")
     rwe_body.should_not contain("su -m")
     rwe_body.should contain("/bin/sh ${_RWE_WRAPPER}")
