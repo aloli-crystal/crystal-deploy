@@ -20,9 +20,11 @@ module CrystalDeploy
           mode = ask(I18n.t("db.choice") + " : ")
         end
 
-        pg_user = ask_required(I18n.t("db.user_prompt"))
+        # Suggestion : app_name avec tirets → underscores (sans suffixe d'environnement)
+        suggested = @config.app_name.gsub("-", "_")
+        pg_user = ask_with_suggestion(I18n.t("db.user_prompt"), suggested)
         pg_pass = ask_password
-        pg_db   = ask_required(I18n.t("db.db_prompt"))
+        pg_db   = ask_with_suggestion(I18n.t("db.db_prompt"), suggested)
 
         if mode == "1"
           run_socket_dialog(pg_user, pg_pass, pg_db)
@@ -77,6 +79,16 @@ module CrystalDeploy
           value = ask("#{prompt} : ")
           return value unless value.empty?
           log_warn I18n.t("init.required_empty")
+        end
+      end
+
+      # Demande un champ avec une suggestion affichée entre crochets.
+      # Si l'utilisateur appuie sur Entrée, la suggestion est utilisée.
+      private def ask_with_suggestion(prompt : String, suggestion : String) : String
+        loop do
+          value = ask("#{prompt} [#{suggestion}] : ")
+          return suggestion if value.empty?
+          return value
         end
       end
 
