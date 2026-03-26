@@ -646,8 +646,35 @@ module CrystalDeploy
             init_directories
             init_env
             init_nginx
-            [ -L "${CURRENT_LINK}" ] && { init_rcd; init_database; } || \
-              log_warn "Aucun deploy détecté. Lancez un deploy puis relancez init."
+            # Cloner le dépôt et effectuer une première release si aucun deploy n'existe
+            if [ -L "${CURRENT_LINK}" ]; then
+              init_rcd
+              init_database
+            else
+              log_section "Première release (clone + compilation)"
+              DEPLOY_START=$(date +%s)
+              clone_repo
+              link_shared
+              compile
+              run_migrations
+              activate_release
+              init_rcd
+              init_database
+              start_service
+              reload_nginx
+              DEPLOY_END=$(date +%s)
+              DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+              if [ "${FRAMEWORK}" = "marten" ]; then
+                APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
+                  | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
+              else
+                APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
+                  | cut -d= -f2- | tr -d '"')
+              fi
+              log_info "Première release compilée et activée."
+              log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
+              log_info "Site disponible : ${APP_URL_FINAL:-https://${APP_FULL_NAME}.example.app}"
+            fi
             log_section "Initialisation [${ENV_NAME}] terminée."
             ;;
           deploy)
