@@ -6,6 +6,16 @@ module CrystalDeploy
     # Propose deux modes de connexion : socket Unix ou TCP.
     # Aucune valeur par défaut n'est proposée — l'utilisateur saisit tout.
     # Le mot de passe est généré automatiquement si laissé vide.
+    #
+    # Connexion socket Unix :
+    #   Le driver `pg` de Crystal ne supporte pas DB_HOST=/tmp.
+    #   On utilise DATABASE_URL avec le paramètre host= pour les deux frameworks.
+    #   Marten lit DATABASE_URL s'il est défini (priorité sur DB_HOST/DB_PORT).
+    #   Exemple : postgresql://user:pass@/dbname?host=/tmp
+    #
+    # Connexion TCP :
+    #   Marten : DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+    #   Kemal  : DATABASE_URL
     class Postgresql < Base
       def run_dialog : Hash(String, String)
         log_section I18n.t("db.section")
@@ -37,24 +47,20 @@ module CrystalDeploy
 
       # ── Privé ──────────────────────────────────────────────────────────────
 
+      # Socket Unix : on utilise DATABASE_URL avec host= pour les deux frameworks.
+      # Le driver `pg` de Crystal ne supporte pas DB_HOST=/path/to/socket/dir.
+      # Marten lit DATABASE_URL en priorité si la variable est définie.
+      # Format : postgresql://user:pass@/dbname?host=/tmp
       private def run_socket_dialog(user : String, pass : String, db : String) : Hash(String, String)
         socket_dir = ask_with_suggestion(I18n.t("db.socket_dir_prompt"), "/tmp")
         log_info I18n.t("db.socket_info", path: socket_dir)
 
-        if @config.marten?
-          {
-            "DB_HOST"     => socket_dir,
-            "DB_PORT"     => "",
-            "DB_USER"     => user,
-            "DB_PASSWORD" => pass,
-            "DB_NAME"     => db,
-          }
-        else
-          # Kemal : DATABASE_URL avec paramètre host= pour socket Unix
-          {
-            "DATABASE_URL" => "postgresql://#{user}:#{pass}@/#{db}?host=#{socket_dir}",
-          }
-        end
+        # Encoder le mot de passe pour l'URL (les caractères spéciaux doivent être encodés)
+        encoded_pass = URI.encode_path_segment(pass)
+
+        {
+          "DATABASE_URL" => "postgresql://#{user}:#{encoded_pass}@/#{db}?host=#{socket_dir}",
+        }
       end
 
       private def run_tcp_dialog(user : String, pass : String, db : String) : Hash(String, String)

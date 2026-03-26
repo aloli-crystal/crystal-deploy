@@ -106,15 +106,25 @@ module CrystalDeploy
         # ---------------------------------------------------------------------------
         # run_with_env USER DIR CMD...
         # Exécute CMD en tant que USER depuis DIR avec les variables du .env chargées.
-        # Utilise set -a / set +a pour sourcer le .env sans casser les valeurs
-        # contenant des espaces, des = ou des caractères spéciaux.
+        #
+        # Stratégie : on génère un fichier .env temporaire épuré (sans commentaires
+        # ni lignes vides) puis on le source avec set -a / set +a.
+        # Cela évite l'erreur "set: Le nom de la variable doit commencer par une lettre"
+        # que /bin/sh (dash/FreeBSD sh) lève sur les lignes de commentaires.
         # ---------------------------------------------------------------------------
         run_with_env() {
           _RWE_USER="$1"; shift
           _RWE_DIR="$1"; shift
           _RWE_CMD="$*"
+          # Créer un .env temporaire sans commentaires ni lignes vides
+          _RWE_TMP=$(mktemp /tmp/.env_clean.XXXXXX)
+          grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" | grep -v '^[[:space:]]*$' > "${_RWE_TMP}" || true
+          chmod 600 "${_RWE_TMP}"
           sudo su -m "${_RWE_USER}" -c \
-            "cd ${_RWE_DIR} && set -a && . ${SHARED_DIR}/.env && set +a && ${_RWE_CMD} 2>&1"
+            "cd ${_RWE_DIR} && set -a && . ${_RWE_TMP} && set +a && ${_RWE_CMD} 2>&1"
+          _RWE_STATUS=$?
+          rm -f "${_RWE_TMP}"
+          return ${_RWE_STATUS}
         }
 
         # ==========================================================================
