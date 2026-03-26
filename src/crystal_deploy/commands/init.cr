@@ -110,10 +110,16 @@ module CrystalDeploy
         env_values["MARTEN_ENV"]           = marten_env
         env_values["MARTEN_ALLOWED_HOSTS"] = marten_host
         env_values["MARTEN_SOCKET"]        = marten_socket
+        # APP_HOST et APP_PORT : repli TCP si MARTEN_SOCKET n'est pas défini.
+        # Valeurs par défaut : 127.0.0.1 et 8000 (défauts Marten).
+        env_values["APP_HOST"]             = "127.0.0.1"
+        env_values["APP_PORT"]             = "8000"
 
         log_info "MARTEN_ENV           = #{marten_env}"
         log_info "MARTEN_ALLOWED_HOSTS = #{marten_host}"
         log_info "MARTEN_SOCKET        = #{marten_socket}"
+        log_info "APP_HOST             = 127.0.0.1 (repli TCP)"
+        log_info "APP_PORT             = 8000 (repli TCP)"
       end
 
       # ── Variable obligatoire ───────────────────────────────────────────────

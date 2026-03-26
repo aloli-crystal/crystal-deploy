@@ -155,7 +155,7 @@ module CrystalDeploy
     # (variables Marten auto, dev-only, DB gérées par le dialogue)
     DEFAULT_SKIP = [
       "MARTEN_ENV", "MARTEN_ALLOWED_HOSTS", "MARTEN_SOCKET",
-      "APP_HOST", "PORT",
+      "APP_HOST", "APP_PORT", "PORT",
       "DB_NAME_TEST",
       "DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME",
       "DATABASE_URL",
