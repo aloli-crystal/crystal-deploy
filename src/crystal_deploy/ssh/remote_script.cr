@@ -122,7 +122,11 @@ module CrystalDeploy
           # 644 : le fichier est cree par root mais doit etre lisible par APP_USER
           # (sudo su -m change l'utilisateur mais pas les droits sur le fichier temporaire)
           chmod 644 "${_RWE_TMP}"
-          sudo su -m "${_RWE_USER}" -c \
+          # IMPORTANT : on force /bin/sh explicitement via 'sudo su -m USER /bin/sh -c ...'.
+          # Sans cela, sudo su -m utilise le shell de l'utilisateur (ex: zsh) qui
+          # interprète 'set -a' différemment de /bin/sh et peut lever :
+          # "set: Le nom de la variable doit commencer par une lettre."
+          sudo su -m "${_RWE_USER}" /bin/sh -c \
             "cd ${_RWE_DIR} && set -a && . ${_RWE_TMP} && set +a && ${_RWE_CMD} 2>&1"
           _RWE_STATUS=$?
           rm -f "${_RWE_TMP}"
