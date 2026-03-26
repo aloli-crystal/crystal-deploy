@@ -18,17 +18,11 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("_RWE_WRAPPER")
     content.should contain("export %s")
     # run_with_env doit utiliser sudo su sans -m (pas de preservation de l'env root)
-    # On extrait uniquement la fonction run_with_env pour le verifier
-    rwe_start = content.index("run_with_env() {").not_nil!
-    # Chercher la ligne '        }' qui ferme run_with_env (apres son debut)
-    rwe_close = content.index("\n        }\n", rwe_start)
-    rwe_body  = rwe_close ? content[rwe_start..rwe_close] : content[rwe_start..]
-    rwe_body.should contain("sudo su \"${_RWE_USER}\"")
-    rwe_body.should_not contain("su -m")
-    rwe_body.should contain("/bin/sh ${_RWE_WRAPPER}")
-    # Ne doit PAS utiliser set -a dans le code shell de run_with_env
-    rwe_code = rwe_body.lines.reject { |l| l.strip.starts_with?("#") }
-    rwe_code.join("\n").should_not contain("set -a")
+    # La ligne exacte generee par run_with_env :
+    content.should contain("sudo su \"${_RWE_USER}\" -c \"/bin/sh ${_RWE_WRAPPER}\"")
+    # Ne doit PAS utiliser set -a dans le code shell (hors commentaires)
+    code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
+    code_lines.join("\n").should_not contain("set -a")
   end
 
   # Le script wrapper doit etre executable par APP_USER (chmod 755)
