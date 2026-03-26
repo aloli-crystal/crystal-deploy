@@ -18,8 +18,10 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("_RWE_WRAPPER")
     content.should contain("export %s")
     content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
-    # Ne doit PAS utiliser set -a (cause de l'erreur sur FreeBSD)
-    content.should_not contain("set -a")
+    # Ne doit PAS utiliser set -a dans le code shell (hors commentaires)
+    # Les lignes de commentaires shell commencent par '#'
+    code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
+    code_lines.join("\n").should_not contain("set -a")
   end
 
   # Le script wrapper doit etre executable par APP_USER (chmod 755)
