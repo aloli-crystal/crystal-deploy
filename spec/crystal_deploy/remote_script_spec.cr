@@ -6,48 +6,37 @@ require "../spec_helper"
 
 describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
   # Régression : sudo su -m utilisait le shell de l'utilisateur (zsh sur le serveur).
-  # zsh interprète 'set -a' différemment de /bin/sh et lève l'erreur
-  # "set: Le nom de la variable doit commencer par une lettre" sur des variables
-  # d'environnement système héritées.
-  # Correction : forcer /bin/sh explicitement via 'sudo su -m USER /bin/sh -c ...'.
-  it "run_with_env force /bin/sh (independamment du shell de l'utilisateur)" do
+  # De plus, set -a sur FreeBSD /bin/sh exporte aussi les variables héritées dont
+  # les noms commencent par '_' ou d'autres caractères non-alphabétiques, ce qui
+  # lève "Nom de variable incorrect".
+  # Correction : script wrapper avec 'export KEY=VALUE' ligne par ligne.
+  it "run_with_env utilise un script wrapper avec export (pas set -a)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
-    content.should contain("su -m")
-    content.should contain("/bin/sh -c")
-    # Ne doit PAS utiliser sudo su -m USER -c sans /bin/sh explicite
-    content.should_not match(/su -m "\$\{_RWE_USER\}" -c/)
+    # Utilise un script wrapper execute directement par /bin/sh
+    content.should contain("_RWE_WRAPPER")
+    content.should contain("export %s")
+    content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
+    # Ne doit PAS utiliser set -a (cause de l'erreur sur FreeBSD)
+    content.should_not contain("set -a")
   end
 
-  # Régression : run_with_env créait le fichier temporaire avec chmod 600.
-  # APP_USER (ex: deploy) ne pouvait pas le lire → le sourçage échouait
-  # silencieusement → "set: Le nom de la variable doit commencer par une lettre".
-  # Correction : chmod 644 pour que APP_USER puisse lire le fichier.
-  it "run_with_env utilise chmod 644 (non 600) sur le .env temporaire" do
+  # Le script wrapper doit etre executable par APP_USER (chmod 755)
+  it "run_with_env utilise chmod 755 sur le script wrapper" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
-    content.should contain("chmod 644")
-    content.should_not match(/chmod 600.*_RWE_TMP|_RWE_TMP.*chmod 600/)
+    content.should contain("chmod 755")
   end
 
-  # Régression : run_with_env ne filtrait pas les commentaires du .env.
-  # /bin/sh (FreeBSD) lève une erreur sur les lignes commençant par '#'.
-  # Correction : grep -v '^[[:space:]]*#' filtre les commentaires avant sourçage.
-  it "run_with_env filtre les commentaires du .env avant sourçage" do
+  # Les commentaires et lignes vides du .env doivent etre filtres
+  # pour ne pas generer des lignes 'export # commentaire' dans le wrapper.
+  it "run_with_env filtre les commentaires et lignes vides du .env" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     content.should contain("grep -v '^[[:space:]]*#'")
-  end
-
-  # Régression : run_with_env ne filtrait pas les lignes vides du .env.
-  # /bin/sh peut lever des erreurs sur les lignes vides avec set -a.
-  it "run_with_env filtre les lignes vides du .env avant sourçage" do
-    config = SpecHelper.marten_config
-    env = SpecHelper.dev_env(config)
-    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     content.should contain("grep -v '^[[:space:]]*$'")
   end
 

@@ -116,20 +116,25 @@ module CrystalDeploy
           _RWE_USER="$1"; shift
           _RWE_DIR="$1"; shift
           _RWE_CMD="$*"
-          # Créer un .env temporaire sans commentaires ni lignes vides
-          _RWE_TMP=$(mktemp /tmp/.env_clean.XXXXXX)
-          grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" | grep -v '^[[:space:]]*$' > "${_RWE_TMP}" || true
-          # 644 : le fichier est cree par root mais doit etre lisible par APP_USER
-          # (sudo su -m change l'utilisateur mais pas les droits sur le fichier temporaire)
-          chmod 644 "${_RWE_TMP}"
-          # IMPORTANT : on force /bin/sh explicitement via 'sudo su -m USER /bin/sh -c ...'.
-          # Sans cela, sudo su -m utilise le shell de l'utilisateur (ex: zsh) qui
-          # interprète 'set -a' différemment de /bin/sh et peut lever :
-          # "set: Le nom de la variable doit commencer par une lettre."
-          sudo su -m "${_RWE_USER}" /bin/sh -c \
-            "cd ${_RWE_DIR} && set -a && . ${_RWE_TMP} && set +a && ${_RWE_CMD} 2>&1"
+          # Créer un script wrapper temporaire qui :
+          #   1. Exporte chaque variable du .env avec 'export KEY=VALUE'
+          #      (evite set -a qui, sur FreeBSD /bin/sh, exporte aussi les variables
+          #      heritees dont les noms commencent par '_' ou d'autres caracteres
+          #      non-alphabetiques -> "Nom de variable incorrect")
+          #   2. Execute la commande dans le bon repertoire
+          _RWE_WRAPPER=$(mktemp /tmp/.rwe_wrapper.XXXXXX)
+          printf '#!/bin/sh\n' > "${_RWE_WRAPPER}"
+          printf 'cd %s || exit 1\n' "${_RWE_DIR}" >> "${_RWE_WRAPPER}"
+          grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" \
+            | grep -v '^[[:space:]]*$' \
+            | while IFS= read -r _RWE_LINE; do
+                printf 'export %s\n' "${_RWE_LINE}" >> "${_RWE_WRAPPER}"
+              done
+          printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
+          chmod 755 "${_RWE_WRAPPER}"
+          sudo su -m "${_RWE_USER}" /bin/sh "${_RWE_WRAPPER}"
           _RWE_STATUS=$?
-          rm -f "${_RWE_TMP}"
+          rm -f "${_RWE_WRAPPER}"
           return ${_RWE_STATUS}
         }
 
