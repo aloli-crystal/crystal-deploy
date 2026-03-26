@@ -169,68 +169,90 @@ module CrystalDeploy
         }
 
         # ---------------------------------------------------------------------------
-        # init_database : comportement différent selon FRAMEWORK
-        #
-        #   kemal  : applique db/schema_pg.sql si présent, puis lance le seed binaire
-        #   marten : lance `marten migrate` puis `marten manage seed` (ou seed.cr CLI)
+        # create_database : crée l'utilisateur et la base PostgreSQL (sans migrations ni seed)
+        # Doit être appelée AVANT run_migrations.
+        # ---------------------------------------------------------------------------
+        create_database() {
+          log_section "Base de données PostgreSQL"
+          [ -z "${PG_USER_B64}" ] && { log_info "Pas de configuration PostgreSQL."; return 0; }
+          PG_USER=$(printf '%s' "${PG_USER_B64}" | base64 -d)
+          PG_PASS=$(printf '%s' "${PG_PASS_B64}" | base64 -d)
+          PG_DB=$(printf '%s' "${PG_DB_B64}" | base64 -d)
+          PG_HOST=$(printf '%s' "${PG_HOST_B64}" | base64 -d)
+          if ! command -v psql >/dev/null 2>&1; then
+            log_warn "psql introuvable. Installez PostgreSQL : pkg install postgresql16-client"
+            return 0
+          fi
+          # Créer le rôle si absent
+          USER_EXISTS=$(sudo su -m postgres -c \
+            "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='${PG_USER}'\"" 2>/dev/null || echo "")
+          if [ "${USER_EXISTS}" != "1" ]; then
+            sudo su -m postgres -c \
+              "psql -c \"CREATE ROLE ${PG_USER} WITH LOGIN PASSWORD '${PG_PASS}';\"" && \
+              log_info "Utilisateur PostgreSQL '${PG_USER}' créé."
+          else
+            log_info "Utilisateur PostgreSQL '${PG_USER}' déjà présent."
+          fi
+          # Créer la base si absente
+          DB_EXISTS=$(sudo su -m postgres -c \
+            "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${PG_DB}'\"" 2>/dev/null || echo "")
+          if [ "${DB_EXISTS}" != "1" ]; then
+            sudo su -m postgres -c "createdb -O ${PG_USER} ${PG_DB}" && \
+              log_info "Base de données '${PG_DB}' créée."
+            # Kemal : appliquer le schéma SQL statique si présent
+            if [ "${FRAMEWORK}" = "kemal" ] && [ -f "${CURRENT_LINK}/db/schema_pg.sql" ]; then
+              sudo su -m postgres -c "psql -d ${PG_DB} -f ${CURRENT_LINK}/db/schema_pg.sql" && \
+                log_info "Schéma SQL appliqué."
+            fi
+          else
+            log_info "Base de données '${PG_DB}' déjà présente."
+          fi
+        }
+
+        # ---------------------------------------------------------------------------
+        # run_seed : exécute le seed après activation de la release
+        # Marten : commande `seed` si définie dans la CLI
+        # Kemal  : commande `seed` via le binaire
+        # ---------------------------------------------------------------------------
+        run_seed() {
+          [ ! -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && return 0
+          [ ! -f "${SHARED_DIR}/.env" ] && return 0
+          ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
+          if [ "${FRAMEWORK}" = "marten" ]; then
+            # Seed Marten : commande `seed` si définie dans la CLI
+            if [ -f "${CURRENT_LINK}/seed.cr" ] || grep -rq 'command_name.*seed' \
+                "${CURRENT_LINK}/src/" 2>/dev/null; then
+              log_section "Seed Marten"
+              sudo su -m "${APP_USER}" -c \
+                "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+                log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
+            else
+              log_info "Pas de seed Marten détecté."
+            fi
+          else
+            # Kemal : seed via le binaire
+            log_section "Seed"
+            sudo su -m "${APP_USER}" -c \
+              "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
+              log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
+          fi
+        }
+
+        # ---------------------------------------------------------------------------
+        # init_database : alias de compatibilité (re-init sur un serveur existant)
+        # Crée la base si absente, applique les migrations et le seed.
         # ---------------------------------------------------------------------------
         init_database() {
-          log_section "Base de données PostgreSQL (framework: ${FRAMEWORK})"
-          if [ -n "${PG_USER_B64}" ]; then
-            PG_USER=$(printf '%s' "${PG_USER_B64}" | base64 -d)
-            PG_PASS=$(printf '%s' "${PG_PASS_B64}" | base64 -d)
-            PG_DB=$(printf '%s' "${PG_DB_B64}" | base64 -d)
-            PG_HOST=$(printf '%s' "${PG_HOST_B64}" | base64 -d)
-            if command -v psql >/dev/null 2>&1; then
-              USER_EXISTS=$(sudo su -m postgres -c \
-                "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='${PG_USER}'\"" 2>/dev/null || echo "")
-              [ "${USER_EXISTS}" != "1" ] && \
-                sudo su -m postgres -c \
-                  "psql -c \"CREATE ROLE ${PG_USER} WITH LOGIN PASSWORD '${PG_PASS}';\"" && \
-                log_info "Utilisateur PostgreSQL '${PG_USER}' créé."
-              DB_EXISTS=$(sudo su -m postgres -c \
-                "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='${PG_DB}'\"" 2>/dev/null || echo "")
-              if [ "${DB_EXISTS}" != "1" ]; then
-                sudo su -m postgres -c "createdb -O ${PG_USER} ${PG_DB}"
-                log_info "Base de données '${PG_DB}' créée."
-                # Kemal : appliquer le schéma SQL statique si présent
-                if [ "${FRAMEWORK}" = "kemal" ]; then
-                  [ -f "${CURRENT_LINK}/db/schema_pg.sql" ] && \
-                    sudo su -m postgres -c "psql -d ${PG_DB} -f ${CURRENT_LINK}/db/schema_pg.sql" && \
-                    log_info "Schéma SQL appliqué."
-                fi
-              else
-                log_info "Base de données '${PG_DB}' déjà présente."
-              fi
-            else
-              log_warn "psql introuvable. Installez PostgreSQL : pkg install postgresql16-client"
-            fi
-          fi
-
-          # Migrations et seed selon le framework
+          create_database
           if [ -f "${CURRENT_LINK}/bin/${APP_FULL_NAME}" ] && [ -f "${SHARED_DIR}/.env" ]; then
             ENV_VARS=$(grep -v '^#' "${SHARED_DIR}/.env" | grep -v '^$' | xargs)
             if [ "${FRAMEWORK}" = "marten" ]; then
-              # Marten : migrations via la CLI intégrée
               log_section "Migrations Marten"
               sudo su -m "${APP_USER}" -c \
                 "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} migrate 2>&1" || \
                 log_warn "Migrations retournées une erreur (peut-être déjà appliquées)."
-              # Seed Marten (seed.cr via CLI manage ou commande dédiée)
-              if [ -f "${CURRENT_LINK}/seed.cr" ] || grep -q 'command_name.*seed' \
-                  "${CURRENT_LINK}/src/"*"/cli/"*.cr 2>/dev/null; then
-                log_section "Seed Marten"
-                sudo su -m "${APP_USER}" -c \
-                  "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
-                  log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
-              fi
-            else
-              # Kemal : seed via le binaire directement
-              log_section "Seed"
-              sudo su -m "${APP_USER}" -c \
-                "cd ${CURRENT_LINK} && env ${ENV_VARS} ./bin/${APP_FULL_NAME} seed 2>&1" || \
-                log_warn "Seed retourné une erreur (peut-être déjà initialisé)."
             fi
+            run_seed
           fi
         }
 
@@ -656,10 +678,11 @@ module CrystalDeploy
               clone_repo
               link_shared
               compile
+              create_database
               run_migrations
               activate_release
               init_rcd
-              init_database
+              run_seed
               start_service
               reload_nginx
               DEPLOY_END=$(date +%s)
