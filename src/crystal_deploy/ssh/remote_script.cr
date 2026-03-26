@@ -425,7 +425,9 @@ module CrystalDeploy
         #!/bin/sh
         cd "${RELEASE_DIR}" || exit 1
         shards install --production >> "${COMPILE_LOG}" 2>&1
-        crystal build ${CRYSTAL_FLAGS} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
+          # CRYSTAL_FLAGS vaut "-" quand absent (sentinelle pour éviter le décalage d'arguments)
+          CRYSTAL_FLAGS_REAL=$([ "${CRYSTAL_FLAGS}" = "-" ] && echo "" || echo "${CRYSTAL_FLAGS}")
+          crystal build ${CRYSTAL_FLAGS_REAL} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
         [ \$? -eq 0 ] && echo "COMPILE_OK" >> "${COMPILE_LOG}" || echo "COMPILE_FAIL" >> "${COMPILE_LOG}"
         COMPILE_EOF
           chmod 755 "${COMPILE_SCRIPT}"

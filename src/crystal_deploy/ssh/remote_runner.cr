@@ -81,7 +81,7 @@ module CrystalDeploy
           @env.branch,
           @config.repo_url,
           @config.crystal_main,
-          @config.crystal_flags || "",
+          @config.crystal_flags.try(&.presence) || "-",  # "-" si vide pour éviter le décalage d'arguments
           @config.keep_releases.to_s,
           @command,
           remote_data,                    # $10 : chemin du fichier de données
