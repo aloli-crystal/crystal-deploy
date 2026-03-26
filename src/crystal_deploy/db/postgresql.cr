@@ -20,11 +20,13 @@ module CrystalDeploy
           mode = ask(I18n.t("db.choice") + " : ")
         end
 
-        # Suggestion : app_name avec tirets → underscores (sans suffixe d'environnement)
-        suggested = @config.app_name.gsub("-", "_")
-        pg_user = ask_with_suggestion(I18n.t("db.user_prompt"), suggested)
+        # Suggestion utilisateur : app_name (tirets → underscores)
+        suggested_user = @config.app_name.gsub("-", "_")
+        # Suggestion base : app_name__env_name (ex: les_amis_de_joseph__developpement)
+        suggested_db = "#{suggested_user}__#{@env.name.gsub("-", "_")}"
+        pg_user = ask_with_suggestion(I18n.t("db.user_prompt"), suggested_user)
         pg_pass = ask_password
-        pg_db   = ask_with_suggestion(I18n.t("db.db_prompt"), suggested)
+        pg_db   = ask_with_suggestion(I18n.t("db.db_prompt"), suggested_db)
 
         if mode == "1"
           run_socket_dialog(pg_user, pg_pass, pg_db)
