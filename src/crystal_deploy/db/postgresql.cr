@@ -47,20 +47,29 @@ module CrystalDeploy
 
       # ── Privé ──────────────────────────────────────────────────────────────
 
-      # Socket Unix : on utilise DATABASE_URL avec host= pour les deux frameworks.
-      # Le driver `pg` de Crystal ne supporte pas DB_HOST=/path/to/socket/dir.
-      # Marten lit DATABASE_URL en priorité si la variable est définie.
-      # Format : postgresql://user:pass@/dbname?host=/tmp
+      # Socket Unix avec Marten : DB_HOST = répertoire du socket, DB_PORT = 5432.
+      # Marten (via crystal-db + pg driver) utilise DB_HOST comme répertoire de socket
+      # quand DB_HOST commence par '/' — le driver pg construit alors le chemin
+      # /DB_HOST/.s.PGSQL.DB_PORT pour se connecter.
+      # DB_PORT ne doit PAS être vide sinon Marten lève KeyError: "DB_PORT".
       private def run_socket_dialog(user : String, pass : String, db : String) : Hash(String, String)
         socket_dir = ask_with_suggestion(I18n.t("db.socket_dir_prompt"), "/tmp")
         log_info I18n.t("db.socket_info", path: socket_dir)
 
-        # Encoder le mot de passe pour l'URL (les caractères spéciaux doivent être encodés)
-        encoded_pass = URI.encode_path_segment(pass)
-
-        {
-          "DATABASE_URL" => "postgresql://#{user}:#{encoded_pass}@/#{db}?host=#{socket_dir}",
-        }
+        if @config.marten?
+          {
+            "DB_HOST"     => socket_dir,
+            "DB_PORT"     => "5432",
+            "DB_USER"     => user,
+            "DB_PASSWORD" => pass,
+            "DB_NAME"     => db,
+          }
+        else
+          # Kemal : DATABASE_URL avec paramètre host= pour socket Unix
+          {
+            "DATABASE_URL" => "postgresql://#{user}:#{pass}@/#{db}?host=#{socket_dir}",
+          }
+        end
       end
 
       private def run_tcp_dialog(user : String, pass : String, db : String) : Hash(String, String)
