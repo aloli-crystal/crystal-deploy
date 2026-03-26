@@ -133,7 +133,12 @@ module CrystalDeploy
               done
           printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
           chmod 755 "${_RWE_WRAPPER}"
-          sudo su -m "${_RWE_USER}" /bin/sh "${_RWE_WRAPPER}"
+          # IMPORTANT : pas de flag -m sur 'su'.
+          # sudo su -m preserve l'environnement complet de root, qui contient des
+          # variables systeme dont les noms commencent par des caracteres non-
+          # alphabetiques. FreeBSD /bin/sh les rejette avec "Nom de variable incorrect".
+          # Sans -m, su cree un environnement propre pour APP_USER.
+          sudo su "${_RWE_USER}" -c "/bin/sh ${_RWE_WRAPPER}"
           _RWE_STATUS=$?
           rm -f "${_RWE_WRAPPER}"
           return ${_RWE_STATUS}

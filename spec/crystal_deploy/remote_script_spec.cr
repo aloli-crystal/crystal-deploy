@@ -16,8 +16,10 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     # Utilise un script wrapper execute directement par /bin/sh
     content.should contain("_RWE_WRAPPER")
-    content.should contain("export %s")
-    content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
+     # sudo su sans -m pour ne pas heriter de l'environnement root
+    content.should contain("sudo su \"${_RWE_USER}\"")
+    content.should_not contain("su -m")
+    content.should contain("/bin/sh ${_RWE_WRAPPER}")
     # Ne doit PAS utiliser set -a dans le code shell (hors commentaires)
     # Les lignes de commentaires shell commencent par '#'
     code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
