@@ -26,9 +26,17 @@ module CrystalDeploy
       STDIN.gets.to_s.strip
     end
 
+    # Confirmation avec Oui par défaut (Entrée = oui)
     def confirm?(prompt : String) : Bool
       answer = ask("#{prompt} [O/n] : ")
       !answer.downcase.starts_with?("n")
+    end
+
+    # Confirmation avec Non par défaut (Entrée = non)
+    # À utiliser pour les opérations potentiellement dangereuses (DNS, suppression, etc.)
+    def confirm_no?(prompt : String) : Bool
+      answer = ask("#{prompt} [o/N] : ")
+      answer.downcase.starts_with?("o") || answer.downcase.starts_with?("y")
     end
   end
 end

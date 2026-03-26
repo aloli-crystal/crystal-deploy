@@ -48,16 +48,16 @@ module CrystalDeploy
 
         if credentials_present?
           log_info I18n.t("dns.keys_found", registrar: registrar_name)
-          return unless confirm?(I18n.t("dns.confirm_cname",
+          return unless confirm_no?(I18n.t("dns.confirm_cname",
             sub: subdomain, zone: zone, target: target))
           create_cname(subdomain, target, zone)
           return
         end
 
-        return unless confirm?(I18n.t("dns.configure_now", registrar: registrar_name))
+        return unless confirm_no?(I18n.t("dns.configure_now", registrar: registrar_name))
 
         help_generate_keys(zone)
-        return unless confirm?(I18n.t("dns.keys_ready"))
+        return unless confirm_no?(I18n.t("dns.keys_ready"))
 
         ask_credentials
         save_credentials
