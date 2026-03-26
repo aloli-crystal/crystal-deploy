@@ -21,6 +21,10 @@ module CrystalDeploy
         set -e
 
         # --- Arguments ---
+        # $1 = --remote (marqueur)
+        # $2 = ENV_NAME, $3 = APP_NAME, $4 = BRANCH, $5 = REPO_URL
+        # $6 = CRYSTAL_MAIN, $7 = CRYSTAL_FLAGS, $8 = KEEP_RELEASES
+        # $9 = COMMAND, $10 = DATA_FILE (chemin vers le fichier de données), $11 = FRAMEWORK
         ENV_NAME="${2}"
         APP_NAME="${3}"
         REPO_BRANCH="${4}"
@@ -29,12 +33,24 @@ module CrystalDeploy
         CRYSTAL_FLAGS="${7}"
         KEEP_RELEASES="${8}"
         COMMAND="${9:-deploy}"
-        ENV_B64="${10:-}"
-        PG_USER_B64="${11:-}"
-        PG_PASS_B64="${12:-}"
-        PG_DB_B64="${13:-}"
-        PG_HOST_B64="${14:-}"
-        FRAMEWORK="${15:-kemal}"
+        DATA_FILE="${10:-}"
+        FRAMEWORK="${11:-kemal}"
+
+        # Lire les données sensibles depuis le fichier de données (une valeur par ligne)
+        # Cela évite tout problème d'échappement shell avec les caractères spéciaux du Base64
+        if [ -f "${DATA_FILE}" ]; then
+          ENV_B64=$(sed -n '1p' "${DATA_FILE}")
+          PG_USER_B64=$(sed -n '2p' "${DATA_FILE}")
+          PG_PASS_B64=$(sed -n '3p' "${DATA_FILE}")
+          PG_DB_B64=$(sed -n '4p' "${DATA_FILE}")
+          PG_HOST_B64=$(sed -n '5p' "${DATA_FILE}")
+        else
+          ENV_B64=""
+          PG_USER_B64=""
+          PG_PASS_B64=""
+          PG_DB_B64=""
+          PG_HOST_B64=""
+        fi
 
         # --- Variables dérivées ---
         APP_FULL_NAME="${APP_NAME}--${ENV_NAME}"
