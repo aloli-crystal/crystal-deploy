@@ -44,7 +44,7 @@ module CrystalDeploy
       new.run(args)
     end
 
-    DEPLOY_YML_EXAMPLE = {{ read_file("#{__DIR__}/../../../examples/marten/config/deploy.yml") }}
+    DEPLOY_YML_EXAMPLE = {{ read_file("#{__DIR__}/../../examples/marten/config/deploy.yml") }}
 
     def run(args : Array(String))
       if args.empty?
