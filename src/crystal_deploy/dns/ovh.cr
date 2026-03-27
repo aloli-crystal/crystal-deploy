@@ -1,3 +1,5 @@
+require "digest/sha1"
+
 module CrystalDeploy
   module DNS
     # Implémentation OVH de l'interface DNS.
@@ -7,9 +9,11 @@ module CrystalDeploy
     #   1. Variables d'environnement : OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY
     #   2. Fichier .env local (LOCAL_ENV_PATH)
     #
-    # Signature OVH : SHA1 simple (PAS HMAC) sur la chaîne
+    # Signature OVH : SHA1 simple (PAS HMAC) sur la chaîne concaténée
     #   APP_SECRET+CONSUMER_KEY+METHOD+URL+BODY+TIMESTAMP
-    # Calculée via `openssl dgst -sha1 -hex` (identique à table-de-gaya/config/deploy.sh).
+    #
+    # Calculée via Digest::SHA1.hexdigest — natif Crystal, portable sur
+    # macOS (LibreSSL), Linux (OpenSSL) et FreeBSD, sans processus externe.
     class Ovh < Base
       LOCAL_ENV_PATH = ".env"
       API_URL        = "https://eu.api.ovh.com/1.0"
@@ -92,19 +96,13 @@ module CrystalDeploy
           return
         end
 
-        unless Process.find_executable("openssl")
-          log_warn "openssl introuvable. Créez le CNAME manuellement dans votre espace OVH."
-          return
-        end
-
         ts = `curl -s #{API_URL}/auth/time`.strip
 
-        # Vérifier si le CNAME existe déjà
+        # Vérifier si le CNAME existe déjà.
         # L'API OVH retourne un tableau JSON d'IDs numériques quand des enregistrements
-        # existent, ex: [12345678] ou [12345678, 87654321].
-        # Si aucun enregistrement : []
-        # En cas d'erreur d'authentification : {"class":"...","message":"..."} (sans "error")
-        # → On vérifie strictement que la réponse est un tableau JSON non vide de nombres.
+        # existent, ex: [12345678]. Si aucun enregistrement : [].
+        # En cas d'erreur : {"class":"...","message":"..."}.
+        # On vérifie strictement que la réponse est un tableau non vide de nombres.
         get_url = "#{API_URL}/domain/zone/#{zone}/record?fieldType=CNAME&subDomain=#{subdomain}"
         get_sig = sign(@app_secret, @consumer_key, "GET", get_url, "", ts)
 
@@ -116,9 +114,7 @@ module CrystalDeploy
           "#{get_url}"`.strip
 
         # Un tableau non vide d'IDs numériques commence par "[" suivi d'un chiffre
-        cname_exists = !!(existing =~ /^\[\s*\d/)
-
-        if cname_exists
+        if !!(existing =~ /^\[\s*\d/)
           log_info I18n.t("dns.cname_exists", sub: subdomain, zone: zone)
           return
         end
@@ -129,11 +125,13 @@ module CrystalDeploy
           log_warn "Tentative de création du CNAME malgré tout..."
         end
 
-        # Créer le CNAME
-        post_url = "#{API_URL}/domain/zone/#{zone}/record"
-        body     = %Q({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{target}.","ttl":3600})
-        ts       = `curl -s #{API_URL}/auth/time`.strip
-        post_sig = sign(@app_secret, @consumer_key, "POST", post_url, body, ts)
+        # Créer le CNAME.
+        # La cible doit se terminer par "." (FQDN) — on l'ajoute si absent.
+        fqdn_target = target.ends_with?(".") ? target : "#{target}."
+        post_url    = "#{API_URL}/domain/zone/#{zone}/record"
+        body        = %Q({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{fqdn_target}","ttl":3600})
+        ts          = `curl -s #{API_URL}/auth/time`.strip
+        post_sig    = sign(@app_secret, @consumer_key, "POST", post_url, body, ts)
 
         result = `curl -s -X POST \
           -H "Content-Type: application/json" \
@@ -168,15 +166,17 @@ module CrystalDeploy
         log_info I18n.t("dns.zone_refreshed")
       end
 
-      # Signature OVH : SHA1 SIMPLE (pas HMAC) sur la chaîne
+      # Signature OVH : SHA1 SIMPLE (pas HMAC) sur la chaîne concaténée
       #   APP_SECRET+CONSUMER_KEY+METHOD+URL+BODY+TIMESTAMP
       #
-      # L'API OVH utilise un hash SHA1 ordinaire (openssl dgst -sha1), PAS un HMAC.
-      # Référence : table-de-gaya/config/deploy.sh, fonction ovh_sign()
-      #   printf '%s+%s+%s+%s+%s+%s' secret ck method url body ts
-      #     | openssl dgst -sha1 -hex | awk '{print $2}'
+      # Utilise Digest::SHA1.hexdigest de la bibliothèque standard Crystal :
+      # - Portable : macOS (LibreSSL), Linux (OpenSSL), FreeBSD
+      # - Pas de processus externe (pas d'appel à openssl ou awk)
+      # - Identique au résultat de :
+      #     printf '%s+%s+%s+%s+%s+%s' secret ck method url body ts
+      #       | openssl dgst -sha1 -hex | awk '{print $NF}'
       #
-      # sign_public est exposé pour les tests (même logique que sign).
+      # sign_public est exposé pour les tests unitaires.
       def sign_public(secret : String, consumer : String,
                       method : String, url : String,
                       body : String, ts : String) : String
@@ -186,11 +186,7 @@ module CrystalDeploy
       private def sign(secret : String, consumer : String,
                        method : String, url : String,
                        body : String, ts : String) : String
-        data = "#{secret}+#{consumer}+#{method}+#{url}+#{body}+#{ts}"
-        # openssl dgst -sha1 -hex retourne "SHA1(stdin)= <hex>" ou "(stdin)= <hex>"
-        # On extrait le hash hexadécimal avec split sur les espaces
-        raw = `printf '%s' #{Process.quote(data)} | openssl dgst -sha1 -hex`
-        raw.strip.split(/\s+/).last
+        Digest::SHA1.hexdigest("#{secret}+#{consumer}+#{method}+#{url}+#{body}+#{ts}")
       end
 
       # ── État interne ───────────────────────────────────────────────────────
