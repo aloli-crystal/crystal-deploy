@@ -525,9 +525,12 @@ module CrystalDeploy
         # On tente d'abord install, et en cas d'echec on fait update pour regenerer le lock.
         shards install --production >> "${COMPILE_LOG}" 2>&1 || \
           shards update --production >> "${COMPILE_LOG}" 2>&1
-          # CRYSTAL_FLAGS vaut "-" quand absent (sentinelle pour éviter le décalage d'arguments)
-          CRYSTAL_FLAGS_REAL=$([ "${CRYSTAL_FLAGS}" = "-" ] && echo "" || echo "${CRYSTAL_FLAGS}")
-          crystal build ${CRYSTAL_FLAGS_REAL} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
+        # Compiler le binaire marten (CLI : migrate, seed, etc.)
+        # bin/marten n'est pas fourni par shards install, il faut le compiler explicitement.
+        shards build marten >> "${COMPILE_LOG}" 2>&1
+        # CRYSTAL_FLAGS vaut "-" quand absent (sentinelle pour éviter le décalage d'arguments)
+        CRYSTAL_FLAGS_REAL=$([ "${CRYSTAL_FLAGS}" = "-" ] && echo "" || echo "${CRYSTAL_FLAGS}")
+        crystal build ${CRYSTAL_FLAGS_REAL} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
         [ \$? -eq 0 ] && echo "COMPILE_OK" >> "${COMPILE_LOG}" || echo "COMPILE_FAIL" >> "${COMPILE_LOG}"
         COMPILE_EOF
           chmod 755 "${COMPILE_SCRIPT}"
