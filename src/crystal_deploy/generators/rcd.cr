@@ -5,9 +5,13 @@ module CrystalDeploy
     # et installé sur le serveur par init_rcd().
     #
     # Architecture de démarrage :
-    #   daemon(8) → wrapper shell (shared/bin/<full-name>)
-    #                  ↳ charge shared/.env (set -a / set +a)
-    #                  ↳ exec binaire Crystal | awk (horodatage log)
+    #   daemon(8) -o LOG_FILE → wrapper shell (shared/bin/<full-name>)
+    #                              ↳ charge shared/.env (set -a / set +a)
+    #                              ↳ exec binaire Crystal
+    #
+    # daemon(8) gère la redirection vers LOG_FILE (ouvert en tant que root
+    # avant le changement d'UID vers deploy). Cela évite les problèmes de
+    # permission sur shared/log/ qui appartient à deploy.
     #
     # Le wrapper est (re)généré à chaque démarrage via precmd.
     # Cela garantit que les variables d'environnement sont toujours à jour.
@@ -81,13 +85,20 @@ module CrystalDeploy
         stop_cmd="${name}_stop"
         status_cmd="${name}_status"
 
-        # Créer le répertoire du script wrapper si nécessaire
+        # Créer les répertoires et fichiers nécessaires avant le démarrage
         #{rc_name}_precmd() {
             install -d \\
                 -o "${#{rc_name}_user}" \\
                 -g "${#{rc_name}_group}" \\
                 -m 750 \\
                 "${APP_HOME}/shared/bin"
+            # Créer le fichier de log si absent (daemon -o l'ouvre en tant que root)
+            if [ ! -f "${#{rc_name}_log}" ]; then
+                install -m 640 \\
+                    -o "${#{rc_name}_user}" \\
+                    -g "${#{rc_name}_group}" \\
+                    /dev/null "${#{rc_name}_log}"
+            fi
             # Générer le script wrapper (rechargé à chaque démarrage)
             _generate_wrapper
         }
@@ -108,7 +119,7 @@ module CrystalDeploy
         set -a
         . '${ENV_FILE}'
         set +a
-        exec '${APP_BIN}' 2>&1 | awk '{print strftime("[%Y-%m-%d %H:%M:%S]"), \\$0; fflush()}' >> '${LOG_FILE}'
+        exec '${APP_BIN}'
         WRAPPER_EOF
             chmod 750 "${WRAPPER}"
             chown "${#{rc_name}_user}:${#{rc_name}_group}" "${WRAPPER}"
@@ -124,10 +135,13 @@ module CrystalDeploy
             rm -f "${#{rc_name}_socket}"
 
             # Lancer le wrapper via daemon(8)
+            # -o : daemon ouvre le fichier de log en tant que root avant de changer d'UID
+            #      → résout les problèmes de permission sur shared/log/
             # Le wrapper est un script shell nommé comme l'application → visible dans ps
             /usr/sbin/daemon \\
                 -u "${#{rc_name}_user}" \\
                 -P "${#{rc_name}_pidfile}" \\
+                -o "${#{rc_name}_log}" \\
                 -r \\
                 "${#{rc_name}_wrapper}"
 

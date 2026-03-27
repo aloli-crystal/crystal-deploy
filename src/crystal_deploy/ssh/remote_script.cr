@@ -865,15 +865,21 @@ module CrystalDeploy
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
             if [ "${FRAMEWORK}" = "marten" ]; then
-              APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
+              _URL_RAW=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
                 | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
             else
-              APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
+              _URL_RAW=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
                 | cut -d= -f2- | tr -d '"')
             fi
+            # Ajouter https:// si l'URL ne commence pas déjà par http
+            case "${_URL_RAW}" in
+              http://*|https://*) APP_URL_FINAL="${_URL_RAW}" ;;
+              "") APP_URL_FINAL="https://${APP_FULL_NAME}.example.app" ;;
+              *) APP_URL_FINAL="https://${_URL_RAW}" ;;
+            esac
             log_info "Release compilée et activée."
             log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
-            log_info "Site disponible : ${APP_URL_FINAL:-https://${APP_FULL_NAME}.example.app}"
+            log_info "Site disponible : ${APP_URL_FINAL}"
             log_section "Initialisation [${ENV_NAME}] terminée."
             ;;
           deploy)
@@ -907,16 +913,22 @@ module CrystalDeploy
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
             # Récupérer l'URL selon le framework
             if [ "${FRAMEWORK}" = "marten" ]; then
-              APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
+              _URL_RAW=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
                 | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
             else
-              APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
+              _URL_RAW=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
                 | cut -d= -f2- | tr -d '"')
             fi
+            # Ajouter https:// si l'URL ne commence pas déjà par http
+            case "${_URL_RAW}" in
+              http://*|https://*) APP_URL_FINAL="${_URL_RAW}" ;;
+              "") APP_URL_FINAL="https://${APP_FULL_NAME}.example.app" ;;
+              *) APP_URL_FINAL="https://${_URL_RAW}" ;;
+            esac
             log_section "Déploiement [${ENV_NAME}] terminé avec succès !"
             log_info "Version active  : ${TIMESTAMP}"
             log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
-            log_info "Site disponible : ${APP_URL_FINAL:-https://${APP_FULL_NAME}.example.app}"
+            log_info "Site disponible : ${APP_URL_FINAL}"
             ;;
           rollback)
             check_sudo
