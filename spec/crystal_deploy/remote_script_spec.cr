@@ -247,6 +247,28 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
+  # CORRECTIF : le lien symbolique rc.d doit utiliser SERVICE_RC_NAME (underscores)
+  # car FreeBSD 'service' cherche le fichier par son nom exact dans /usr/local/etc/rc.d/.
+  # SERVICE_NAME utilise des tirets (les-amis-de-joseph--developpement) mais
+  # SERVICE_RC_NAME utilise des underscores (les_amis_de_joseph__developpement).
+  it "init_rcd crée le lien symbolique avec SERVICE_RC_NAME (underscores) et non SERVICE_NAME (tirets)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Trouver le corps de init_rcd()
+    # init_rcd est injectée en début de script (avant le heredoc principal) ;
+    # la prochaine fonction définie après elle est create_database.
+    init_rcd_start = content.index("init_rcd() {")
+    init_rcd_end = content.index("create_database() {")
+    if init_rcd_start && init_rcd_end && init_rcd_start < init_rcd_end
+      init_rcd_body = content[init_rcd_start...init_rcd_end]
+      # Le lien symbolique doit utiliser SERVICE_RC_NAME (avec underscores)
+      init_rcd_body.should contain("/usr/local/etc/rc.d/${SERVICE_RC_NAME}")
+      # Et non SERVICE_NAME (avec tirets)
+      init_rcd_body.should_not contain("/usr/local/etc/rc.d/${SERVICE_NAME}")
+    end
+  end
+
   it "le bloc deploy utilise shards_prepare + compile_start + compile_wait (parallélisé)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)

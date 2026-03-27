@@ -18,7 +18,7 @@ module CrystalDeploy
         init_rcd() {
           log_section "Script rc.d"
           RCD_SHARED="\${SHARED_DIR}/rc.d.\${APP_FULL_NAME}"
-          RCD_LINK="/usr/local/etc/rc.d/\${SERVICE_NAME}"
+          RCD_LINK="/usr/local/etc/rc.d/\${SERVICE_RC_NAME}"
           # Générer le script rc.d depuis le contenu encodé en base64
           # (contenu généré par crystal-deploy lors de la création du script de déploiement)
           printf '%s' "#{rcd_b64}" | base64 -d | sudo tee "\${RCD_SHARED}" >/dev/null
