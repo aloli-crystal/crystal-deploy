@@ -82,6 +82,27 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("[ -d \"${REPO_DIR}\"")
   end
 
+  # CORRECTIF : git clone --bare ne configure PAS de fetch refspec par défaut.
+  # Sans refspec, git fetch --prune origin ne met à jour aucune branche locale du bare.
+  # init_repo doit ajouter +refs/heads/*:refs/heads/* après le clone.
+  it "init_repo configure le refspec fetch après git clone --bare" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Le refspec doit être configuré après le clone
+    content.should contain("remote.origin.fetch '+refs/heads/*:refs/heads/*'")
+    # Et aussi corrigé si le bare existe déjà sans refspec (init relancé)
+    content.should contain("CURRENT_FETCH")
+    # init_repo ne doit PAS retourner 0 sans vérifier le refspec si le bare existe
+    init_start = content.index("init_repo() {")
+    init_end = content.index("init_env() {")
+    if init_start && init_end
+      init_body = content[init_start...init_end]
+      # Le bloc "bare déjà présent" doit contenir la vérification du refspec
+      init_body.should contain("remote.origin.fetch")
+    end
+  end
+
   it "clone_repo utilise git fetch + git archive (pas git clone --depth)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)

@@ -204,19 +204,39 @@ module CrystalDeploy
 
         # ---------------------------------------------------------------------------
         # init_repo : clone le dépôt en mode bare dans shared/repo.git
-        # Appelé une seule fois lors du premier init.
-        # Les déploiements suivants utilisent git fetch (deltas uniquement).
+        # Appelé lors de init (premier déploiement ou ré-initialisation).
+        #
+        # IMPORTANT — refspec fetch :
+        # git clone --bare ne configure PAS de fetch refspec par défaut.
+        # Sans refspec, git fetch ne met à jour aucune branche locale du bare.
+        # On ajoute explicitement : +refs/heads/*:refs/heads/*
+        # Cela permet à clone_repo (git fetch --prune origin) de fonctionner
+        # correctement lors de tous les déploiements suivants.
+        #
+        # Si le bare existe déjà (init relancé), on fait quand même un fetch
+        # pour s'assurer qu'il est à jour avant la release.
         # ---------------------------------------------------------------------------
         init_repo() {
           if [ -d "${REPO_DIR}" ]; then
             log_info "Dépôt bare déjà présent : ${REPO_DIR}"
+            # Vérifier que le refspec fetch est bien configuré (init précédent sans ce correctif)
+            CURRENT_FETCH=$(git --git-dir="${REPO_DIR}" config remote.origin.fetch 2>/dev/null || echo "")
+            if [ "${CURRENT_FETCH}" != "+refs/heads/*:refs/heads/*" ]; then
+              sudo su "${APP_USER}" -c \
+                "git --git-dir=${REPO_DIR} config remote.origin.fetch '+refs/heads/*:refs/heads/*'"
+              log_info "Refspec fetch corrigé dans le bare."
+            fi
             return 0
           fi
           log_section "Initialisation du dépôt bare"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${REPO_DIR}"
           sudo su "${APP_USER}" -c \
             "git clone --bare ${REPO_URL} ${REPO_DIR}"
-          log_info "Dépôt bare cloné : ${REPO_DIR}"
+          # Configurer le refspec fetch pour que git fetch --prune origin
+          # mette à jour les branches locales du bare (absent par défaut en mode bare)
+          sudo su "${APP_USER}" -c \
+            "git --git-dir=${REPO_DIR} config remote.origin.fetch '+refs/heads/*:refs/heads/*'"
+          log_info "Dépôt bare cloné avec refspec fetch configuré : ${REPO_DIR}"
         }
 
         init_env() {
