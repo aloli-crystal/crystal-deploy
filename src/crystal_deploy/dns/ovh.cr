@@ -12,8 +12,9 @@ module CrystalDeploy
     # Signature OVH : SHA1 simple (PAS HMAC) sur la chaîne concaténée
     #   APP_SECRET+CONSUMER_KEY+METHOD+URL+BODY+TIMESTAMP
     #
-    # Calculée via Digest::SHA1.hexdigest — natif Crystal, portable sur
-    # macOS (LibreSSL), Linux (OpenSSL) et FreeBSD, sans processus externe.
+    # Toutes les requêtes HTTP sont faites via Process.run(["curl", ...]) avec
+    # un tableau d'arguments — pas de backtick shell — pour éviter les problèmes
+    # d'interpolation Crystal (ex: $1$ interprété comme variable Crystal).
     class Ovh < Base
       LOCAL_ENV_PATH = ".env"
       API_URL        = "https://eu.api.ovh.com/1.0"
@@ -96,7 +97,7 @@ module CrystalDeploy
           return
         end
 
-        ts = `curl -s #{API_URL}/auth/time`.strip
+        ts = curl_get("#{API_URL}/auth/time")
 
         # Vérifier si le CNAME existe déjà.
         # L'API OVH retourne un tableau JSON d'IDs numériques quand des enregistrements
@@ -106,12 +107,12 @@ module CrystalDeploy
         get_url = "#{API_URL}/domain/zone/#{zone}/record?fieldType=CNAME&subDomain=#{subdomain}"
         get_sig = sign(@app_secret, @consumer_key, "GET", get_url, "", ts)
 
-        existing = `curl -s \
-          -H "X-Ovh-Application: #{@app_key}" \
-          -H "X-Ovh-Consumer: #{@consumer_key}" \
-          -H "X-Ovh-Timestamp: #{ts}" \
-          -H "X-Ovh-Signature: $1$#{get_sig}" \
-          "#{get_url}"`.strip
+        existing = curl_get(get_url, {
+          "X-Ovh-Application" => @app_key,
+          "X-Ovh-Consumer"    => @consumer_key,
+          "X-Ovh-Timestamp"   => ts,
+          "X-Ovh-Signature"   => "$1$#{get_sig}",
+        })
 
         # Un tableau non vide d'IDs numériques commence par "[" suivi d'un chiffre
         if !!(existing =~ /^\[\s*\d/)
@@ -129,17 +130,17 @@ module CrystalDeploy
         # La cible doit se terminer par "." (FQDN) — on l'ajoute si absent.
         fqdn_target = target.ends_with?(".") ? target : "#{target}."
         post_url    = "#{API_URL}/domain/zone/#{zone}/record"
-        body        = %Q({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{fqdn_target}","ttl":3600})
-        ts          = `curl -s #{API_URL}/auth/time`.strip
+        body        = %({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{fqdn_target}","ttl":3600})
+        ts          = curl_get("#{API_URL}/auth/time")
         post_sig    = sign(@app_secret, @consumer_key, "POST", post_url, body, ts)
 
-        result = `curl -s -X POST \
-          -H "Content-Type: application/json" \
-          -H "X-Ovh-Application: #{@app_key}" \
-          -H "X-Ovh-Consumer: #{@consumer_key}" \
-          -H "X-Ovh-Timestamp: #{ts}" \
-          -H "X-Ovh-Signature: $1$#{post_sig}" \
-          -d '#{body}' "#{post_url}"`
+        result = curl_post(post_url, body, {
+          "Content-Type"      => "application/json",
+          "X-Ovh-Application" => @app_key,
+          "X-Ovh-Consumer"    => @consumer_key,
+          "X-Ovh-Timestamp"   => ts,
+          "X-Ovh-Signature"   => "$1$#{post_sig}",
+        })
 
         if result.includes?(%("id"))
           log_info I18n.t("dns.cname_created", sub: subdomain, zone: zone, target: target)
@@ -152,18 +153,40 @@ module CrystalDeploy
       # ── Privé ──────────────────────────────────────────────────────────────
 
       private def refresh_zone(zone : String) : Nil
-        ts      = `curl -s #{API_URL}/auth/time`.strip
+        ts      = curl_get("#{API_URL}/auth/time")
         ref_url = "#{API_URL}/domain/zone/#{zone}/refresh"
         ref_sig = sign(@app_secret, @consumer_key, "POST", ref_url, "", ts)
 
-        `curl -s -X POST \
-          -H "X-Ovh-Application: #{@app_key}" \
-          -H "X-Ovh-Consumer: #{@consumer_key}" \
-          -H "X-Ovh-Timestamp: #{ts}" \
-          -H "X-Ovh-Signature: $1$#{ref_sig}" \
-          "#{ref_url}"`
+        curl_post(ref_url, "", {
+          "X-Ovh-Application" => @app_key,
+          "X-Ovh-Consumer"    => @consumer_key,
+          "X-Ovh-Timestamp"   => ts,
+          "X-Ovh-Signature"   => "$1$#{ref_sig}",
+        })
 
         log_info I18n.t("dns.zone_refreshed")
+      end
+
+      # Exécute curl GET et retourne le corps de la réponse.
+      # Utilise Process.run avec un tableau d'arguments pour éviter tout
+      # problème d'interpolation shell (ex: $1$ interprété par le shell).
+      private def curl_get(url : String, headers : Hash(String, String) = {} of String => String) : String
+        args = ["-s", url]
+        headers.each { |k, v| args << "-H" << "#{k}: #{v}" }
+        io = IO::Memory.new
+        Process.run("curl", args: args, output: io, error: Process::Redirect::Close)
+        io.to_s.strip
+      end
+
+      # Exécute curl POST avec un corps JSON et retourne le corps de la réponse.
+      private def curl_post(url : String, body : String, headers : Hash(String, String) = {} of String => String) : String
+        args = ["-s", "-X", "POST"]
+        headers.each { |k, v| args << "-H" << "#{k}: #{v}" }
+        args << "-d" << body unless body.empty?
+        args << url
+        io = IO::Memory.new
+        Process.run("curl", args: args, output: io, error: Process::Redirect::Close)
+        io.to_s.strip
       end
 
       # Signature OVH : SHA1 SIMPLE (pas HMAC) sur la chaîne concaténée
@@ -171,10 +194,8 @@ module CrystalDeploy
       #
       # Utilise Digest::SHA1.hexdigest de la bibliothèque standard Crystal :
       # - Portable : macOS (LibreSSL), Linux (OpenSSL), FreeBSD
-      # - Pas de processus externe (pas d'appel à openssl ou awk)
-      # - Identique au résultat de :
-      #     printf '%s+%s+%s+%s+%s+%s' secret ck method url body ts
-      #       | openssl dgst -sha1 -hex | awk '{print $NF}'
+      # - Pas de processus externe
+      # - Identique à : printf '%s+%s+%s+%s+%s+%s' ... | openssl dgst -sha1 -hex
       #
       # sign_public est exposé pour les tests unitaires.
       def sign_public(secret : String, consumer : String,
