@@ -43,10 +43,10 @@ module CrystalDeploy
         # rc.d/#{rc_name} — Service FreeBSD pour #{full_name}
         #                     Environnement : #{@env.name}
         #
-        # Ce fichier est stocké dans shared/rc.d.#{full_name}
+        # Ce fichier est stocké dans shared/rc.d.#{rc_name}
         # et activé via un lien symbolique géré par crystal-deploy :
         #   /usr/local/etc/rc.d/#{rc_name}
-        #       → #{app_home}/shared/rc.d.#{full_name}
+        #       → #{app_home}/shared/rc.d.#{rc_name}
         #
         # Activation dans /etc/rc.conf :
         #   #{rc_name}_enable="YES"
@@ -224,9 +224,9 @@ module CrystalDeploy
         RCD
       end
 
-      # Écrit le script rc.d dans config/rc.d.<app-full-name>
+      # Écrit le script rc.d dans config/rc.d.<service-rc-name>
       def write_to_config_dir : String
-        dest = "config/rc.d.#{full_name}"
+        dest = "config/rc.d.#{rc_name}"
         Dir.mkdir_p("config") unless Dir.exists?("config")
         File.write(dest, generate)
         File.chmod(dest, 0o755)
