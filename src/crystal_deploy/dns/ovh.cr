@@ -93,6 +93,11 @@ module CrystalDeploy
         ts = `curl -s #{API_URL}/auth/time`.strip
 
         # Vérifier si le CNAME existe déjà
+        # L'API OVH retourne un tableau JSON d'IDs numériques quand des enregistrements
+        # existent, ex: [12345678] ou [12345678, 87654321].
+        # Si aucun enregistrement : []
+        # En cas d'erreur d'authentification : {"message":"..."} (sans le mot "error")
+        # → On vérifie strictement que la réponse est un tableau JSON non vide de nombres.
         get_url = "#{API_URL}/domain/zone/#{zone}/record?fieldType=CNAME&subDomain=#{subdomain}"
         get_sig = sign(@app_secret, @consumer_key, "GET", get_url, "", ts)
 
@@ -101,11 +106,21 @@ module CrystalDeploy
           -H "X-Ovh-Consumer: #{@consumer_key}" \
           -H "X-Ovh-Timestamp: #{ts}" \
           -H "X-Ovh-Signature: $1$#{get_sig}" \
-          "#{get_url}"`
+          "#{get_url}"`.strip
 
-        if existing != "[]" && !existing.empty? && !existing.includes?("error")
+        # Un tableau non vide d'IDs numériques commence par "[" suivi d'un chiffre
+        # (après espaces éventuels). Ex: [12345678] ou [ 12345678, 87654321 ]
+        cname_exists = !!(existing =~ /^\[\s*\d/)
+
+        if cname_exists
           log_info I18n.t("dns.cname_exists", sub: subdomain, zone: zone)
           return
+        end
+
+        # Réponse inattendue (ni "[]" ni tableau d'IDs) → probablement une erreur API
+        if existing != "[]" && !existing.empty?
+          log_warn I18n.t("dns.unexpected_response", registrar: "OVH", body: existing)
+          log_warn "Tentative de création du CNAME malgré tout..."
         end
 
         # Créer le CNAME

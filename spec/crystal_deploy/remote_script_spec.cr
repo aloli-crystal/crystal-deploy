@@ -293,3 +293,53 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 end
+
+describe CrystalDeploy::SSH::RemoteScript, "traduction messages Marten" do
+  # Marten affiche "No pending migrations to apply" en anglais.
+  # Le script de déploiement doit le traduire en français via sed.
+  it "run_migrations traduit les messages Marten en français via sed" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Le script doit utiliser sed pour traduire les messages
+    content.should contain("No pending migrations to apply")
+    content.should contain("Aucune migration en attente.")
+    content.should contain("Running migrations:")
+    content.should contain("Application des migrations :")
+    # La sortie doit être capturée dans un fichier temporaire pour préserver le code de retour
+    content.should contain("_MIGRATE_OUT")
+    content.should contain("_MIGRATE_RC")
+  end
+
+  it "run_migrations préserve le code de retour de bin/marten (pas de pipe direct)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Chercher le corps de run_migrations
+    mig_start = content.index("run_migrations() {")
+    mig_end = content.index("graceful_stop() {")
+    if mig_start && mig_end
+      mig_body = content[mig_start...mig_end]
+      # Doit capturer la sortie dans un fichier temporaire
+      mig_body.should contain("mktemp")
+      mig_body.should contain("_MIGRATE_RC=$?")
+      # Doit vérifier le code de retour après sed
+      mig_body.should contain("[ ${_MIGRATE_RC} -eq 0 ]")
+    end
+  end
+end
+
+describe CrystalDeploy::DNS::Ovh, "vérification CNAME" do
+  it "cname_exists détecte un tableau JSON non vide d'IDs numériques" do
+    # Simuler les réponses possibles de l'API OVH
+    # Tableau non vide → CNAME existe
+    !!(("[12345678]" =~ /^\[\s*\d/)).should be_truthy
+    !!(("[ 12345678, 87654321 ]" =~ /^\[\s*\d/)).should be_truthy
+    # Tableau vide → pas de CNAME
+    !!(("[]" =~ /^\[\s*\d/)).should be_falsey
+    # Erreur d'authentification OVH (pas de mot "error") → pas de CNAME
+    !!(("{\"message\":\"Invalid credentials\"}" =~ /^\[\s*\d/)).should be_falsey
+    # Réponse vide (timeout curl) → pas de CNAME
+    !!(("" =~ /^\[\s*\d/)).should be_falsey
+  end
+end

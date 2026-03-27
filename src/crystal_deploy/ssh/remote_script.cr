@@ -656,7 +656,21 @@ module CrystalDeploy
             return 0
           fi
           log_section "Migrations Marten"
-          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten migrate" || {
+          # Traduire les messages anglais de Marten en français via sed.
+          # On utilise un fichier temporaire pour préserver le code de retour
+          # de bin/marten (un pipe ferait perdre $? au profit du code de sed).
+          _MIGRATE_OUT=$(mktemp /tmp/.marten_migrate.XXXXXX)
+          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten migrate" > "${_MIGRATE_OUT}" 2>&1
+          _MIGRATE_RC=$?
+          sed \
+            -e 's/No pending migrations to apply/Aucune migration en attente./g' \
+            -e 's/Running migrations:/Application des migrations :/g' \
+            -e 's/Unapplying /Annulation de /g' \
+            -e 's/Applying /Application de /g' \
+            -e 's/Planned operations:/Opérations planifiées :/g' \
+            "${_MIGRATE_OUT}"
+          rm -f "${_MIGRATE_OUT}"
+          [ ${_MIGRATE_RC} -eq 0 ] || {
             log_error "Échec des migrations. Déploiement annulé."
             exit 1
           }
