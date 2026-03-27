@@ -183,19 +183,23 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
-  it "le bloc deploy utilise compile() séquentiel (pas compile_start seul)" do
+  it "le bloc deploy utilise shards_prepare + compile_start + compile_wait (parallélisé)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
-    # Dans le case/esac : init) apparaît avant deploy), deploy) avant rollback)
     deploy_start = content.index("  deploy)")
     rollback_start = content.index("  rollback)")
     if deploy_start && rollback_start
       deploy_block = content[deploy_start...rollback_start]
-      # deploy utilise compile (appel direct, pas compile_start seul)
-      deploy_block.should contain("compile")
-      # compile_start seul ne doit pas apparaître dans le bloc deploy
-      deploy_block.should_not contain("compile_start")
+      # deploy utilise shards_prepare (séquentiel) puis compile_start + compile_wait (parallèle)
+      deploy_block.should contain("shards_prepare")
+      deploy_block.should contain("compile_start")
+      deploy_block.should contain("compile_wait")
+      # run_migrations et run_seed sont appelés en parallèle avec crystal build
+      deploy_block.should contain("run_migrations")
+      deploy_block.should contain("run_seed")
+      # compile() séquentiel ne doit plus être utilisé dans deploy
+      # (il n'apparaît que dans la définition de la fonction compile())
     end
   end
 end

@@ -509,25 +509,40 @@ module CrystalDeploy
         }
 
         # ---------------------------------------------------------------------------
-        # compile_start : lance la compilation en arrière-plan dans une session tmux.
+        # shards_prepare : installe les dépendances et compile bin/marten.
+        # Étape séquentielle rapide (~15s) à exécuter AVANT compile_start.
+        # Permet de rendre bin/marten disponible pour run_migrations pendant
+        # que crystal build --release tourne en arrière-plan.
+        # ---------------------------------------------------------------------------
+        shards_prepare() {
+          log_section "Installation des dépendances (shards)"
+          COMPILE_LOG="/tmp/compile-${APP_FULL_NAME}-${TIMESTAMP}.log"
+          cd "${RELEASE_DIR}" || exit 1
+          # Si le shard.lock est obsolete (source changee), shards install echoue.
+          # On tente d'abord install, et en cas d'echec on fait update pour regenerer le lock.
+          sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards install --production" >> "${COMPILE_LOG}" 2>&1 || \
+            sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards update --production" >> "${COMPILE_LOG}" 2>&1
+          if [ "${FRAMEWORK}" = "marten" ]; then
+            # Compiler bin/marten (CLI : migrate, seed, etc.)
+            # bin/marten n'est pas fourni par shards install, il faut le compiler explicitement.
+            sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards build marten" >> "${COMPILE_LOG}" 2>&1
+            log_info "bin/marten compilé."
+          fi
+        }
+
+        # ---------------------------------------------------------------------------
+        # compile_start : lance uniquement crystal build --release en arrière-plan.
+        # Doit être appelée APRES shards_prepare (bin/marten déjà disponible).
         # Retourne immédiatement pour permettre d'exécuter d'autres tâches en parallèle.
         # Appeler compile_wait ensuite pour attendre la fin et vérifier le résultat.
         # ---------------------------------------------------------------------------
         compile_start() {
           log_section "Compilation Crystal (mode release) — démarrage en arrière-plan"
-          COMPILE_LOG="/tmp/compile-${APP_FULL_NAME}-${TIMESTAMP}.log"
           COMPILE_SESSION="compile-${APP_FULL_NAME}"
           COMPILE_SCRIPT="/tmp/compile-script-${APP_FULL_NAME}-${TIMESTAMP}.sh"
           cat > "${COMPILE_SCRIPT}" << COMPILE_EOF
         #!/bin/sh
         cd "${RELEASE_DIR}" || exit 1
-        # Si le shard.lock est obsolete (source changee), shards install echoue.
-        # On tente d'abord install, et en cas d'echec on fait update pour regenerer le lock.
-        shards install --production >> "${COMPILE_LOG}" 2>&1 || \
-          shards update --production >> "${COMPILE_LOG}" 2>&1
-        # Compiler le binaire marten (CLI : migrate, seed, etc.)
-        # bin/marten n'est pas fourni par shards install, il faut le compiler explicitement.
-        shards build marten >> "${COMPILE_LOG}" 2>&1
         # CRYSTAL_FLAGS vaut "-" quand absent (sentinelle pour éviter le décalage d'arguments)
         CRYSTAL_FLAGS_REAL=$([ "${CRYSTAL_FLAGS}" = "-" ] && echo "" || echo "${CRYSTAL_FLAGS}")
         crystal build ${CRYSTAL_FLAGS_REAL} "${CRYSTAL_MAIN}" --release -o "bin/${APP_FULL_NAME}" >> "${COMPILE_LOG}" 2>&1
@@ -787,21 +802,23 @@ module CrystalDeploy
             DEPLOY_START=$(date +%s)
             clone_repo
             link_shared
-            # Lancer la compilation en arrière-plan : elle prend ~200s.
-            # Pendant ce temps, créer la base de données (rapide, indépendant).
-            # run_migrations doit attendre compile_wait : bin/marten est
-            # généré par shards build marten pendant la compilation.
+            # Étape 1 (séquentielle, rapide ~15s) :
+            #   shards install + shards build marten → bin/marten disponible
+            shards_prepare
+            # Étape 2 (parallèle) :
+            #   - crystal build --release en arrière-plan (~200s)
+            #   - create_database + run_migrations + run_seed avec bin/marten
             compile_start
             create_database
-            # Point de synchronisation : attendre la fin de la compilation
-            # avant les migrations (bin/marten) et l'activation de la release.
-            compile_wait
             run_migrations
+            run_seed
+            # Point de synchronisation : attendre la fin de crystal build
+            # avant d'activer la release (le binaire applicatif doit exister).
+            compile_wait
             activate_release
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
             init_rcd
-            run_seed
             start_service
             reload_nginx
             DEPLOY_END=$(date +%s)
@@ -829,8 +846,17 @@ module CrystalDeploy
             log_section "Déploiement [${ENV_NAME}] — ${TIMESTAMP} (framework: ${FRAMEWORK})"
             clone_repo
             link_shared
-            compile
+            # Étape 1 (séquentielle, rapide ~15s) :
+            #   shards install + shards build marten → bin/marten disponible
+            shards_prepare
+            # Étape 2 (parallèle) :
+            #   - crystal build --release en arrière-plan (~200s)
+            #   - run_migrations + run_seed avec bin/marten
+            compile_start
             run_migrations
+            run_seed
+            # Point de synchronisation : attendre la fin de crystal build
+            compile_wait
             activate_release
             init_rcd
             start_service
