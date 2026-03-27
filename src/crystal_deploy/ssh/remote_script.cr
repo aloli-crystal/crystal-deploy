@@ -788,14 +788,15 @@ module CrystalDeploy
             clone_repo
             link_shared
             # Lancer la compilation en arrière-plan : elle prend ~200s.
-            # Pendant ce temps, créer la base et appliquer les migrations
-            # (bin/marten ne nécessite pas le binaire applicatif compilé).
+            # Pendant ce temps, créer la base de données (rapide, indépendant).
+            # run_migrations doit attendre compile_wait : bin/marten est
+            # généré par shards build marten pendant la compilation.
             compile_start
             create_database
-            run_migrations
             # Point de synchronisation : attendre la fin de la compilation
-            # avant d'activer la release (le binaire doit exister).
+            # avant les migrations (bin/marten) et l'activation de la release.
             compile_wait
+            run_migrations
             activate_release
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
