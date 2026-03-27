@@ -183,6 +183,29 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
+  # init_rcd doit générer le script rc.d directement via base64 (encodé côté Crystal)
+  # et non chercher un fichier dans current/config/ qui n'existe pas lors du premier init.
+  it "init_rcd génère le script rc.d via base64 (pas de dépendance sur current/config/)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # init_rcd doit utiliser base64 -d pour décoder le script rc.d
+    content.should contain("base64 -d | sudo tee")
+    # init_rcd ne doit PAS chercher un fichier dans current/config/
+    content.should_not contain("current/config/rc.d")
+    # init_rcd ne doit PAS afficher le message d'erreur de l'ancienne implémentation
+    content.should_not contain("Lancez d'abord un premier deploy")
+    # Le contenu base64 doit être non vide (le script rc.d est bien encodé)
+    rcd_b64_match = content.match(/printf '%s' "([A-Za-z0-9+\/]+=*)" \| base64 -d/)
+    rcd_b64_match.should_not be_nil
+    if m = rcd_b64_match
+      # Vérifier que le contenu décodé contient bien un script rc.d valide
+      decoded = Base64.decode_string(m[1])
+      decoded.should contain("PROVIDE:")
+      decoded.should contain("run_rc_command")
+    end
+  end
+
   it "le bloc deploy utilise shards_prepare + compile_start + compile_wait (parallélisé)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)

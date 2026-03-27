@@ -10,11 +10,44 @@ module CrystalDeploy
     #   - Les migrations (marten migrate vs schema_pg.sql)
     #   - Le seed (marten manage seed vs ./bin/<app> seed)
     module RemoteScript
+      # Génère la fonction shell init_rcd avec le script rc.d encodé en base64.
+      # On utilise une méthode séparée pour pouvoir interpoler rcd_b64 dans la string
+      # sans casser le heredoc principal <<-'SHELL_EOF' (qui n'accepte pas l'interpolation).
+      private def self.init_rcd_function(rcd_b64 : String) : String
+        <<-FUNC
+        init_rcd() {
+          log_section "Script rc.d"
+          RCD_SHARED="\${SHARED_DIR}/rc.d.\${APP_FULL_NAME}"
+          RCD_LINK="/usr/local/etc/rc.d/\${SERVICE_NAME}"
+          # Générer le script rc.d depuis le contenu encodé en base64
+          # (contenu généré par crystal-deploy lors de la création du script de déploiement)
+          printf '%s' "#{rcd_b64}" | base64 -d | sudo tee "\${RCD_SHARED}" >/dev/null
+          sudo chmod 755 "\${RCD_SHARED}"
+          sudo chown root:wheel "\${RCD_SHARED}"
+          log_info "Script rc.d généré : \${RCD_SHARED}"
+          sudo rm -f "\${RCD_LINK}"
+          sudo ln -s "\${RCD_SHARED}" "\${RCD_LINK}"
+          log_info "Lien symbolique créé : \${RCD_LINK} → \${RCD_SHARED}"
+          if ! grep -q "\${SERVICE_RC_NAME}_enable" /etc/rc.conf 2>/dev/null; then
+            printf "\\n# \${APP_FULL_NAME} — ajouté par deploy le %s\\n" "\$(date)" \\
+              | sudo tee -a /etc/rc.conf >/dev/null
+            printf '%s_enable="YES"\\n' "\${SERVICE_RC_NAME}" | sudo tee -a /etc/rc.conf >/dev/null
+            log_info "Ligne ajoutée dans /etc/rc.conf."
+          else
+            log_info "\${SERVICE_RC_NAME}_enable déjà présent dans /etc/rc.conf."
+          fi
+        }
+        FUNC
+      end
+
       def self.generate(config : Config, env : Environment) : String
         rcd_generator = Generators::Rcd.new(config, env)
         nginx_generator = Generators::Nginx.new(config, env)
+        # Encoder le script rc.d en base64 pour l'injecter sans problème d'échappement
+        # (le contenu contient des apostrophes dans les commentaires français)
+        rcd_b64 = Base64.strict_encode(rcd_generator.generate)
 
-        <<-'SHELL_EOF'
+        <<-'SHELL_EOF' +
         #!/bin/sh
         # Script généré automatiquement par crystal-deploy
         # Ne pas modifier manuellement.
@@ -202,30 +235,9 @@ module CrystalDeploy
           fi
         }
 
-        init_rcd() {
-          log_section "Script rc.d"
-          RCD_SRC="${CURRENT_LINK}/config/rc.d.${APP_FULL_NAME}"
-          RCD_SHARED="${SHARED_DIR}/rc.d.${APP_FULL_NAME}"
-          RCD_LINK="/usr/local/etc/rc.d/${SERVICE_NAME}"
-          if [ ! -f "${RCD_SRC}" ]; then
-            log_warn "Script rc.d introuvable : ${RCD_SRC}"
-            log_warn "Lancez d'abord un premier deploy, puis relancez init."
-            return 0
-          fi
-          sudo install -m 755 -o root -g wheel "${RCD_SRC}" "${RCD_SHARED}"
-          log_info "Script rc.d copié dans shared/ : ${RCD_SHARED}"
-          sudo rm -f "${RCD_LINK}"
-          sudo ln -s "${RCD_SHARED}" "${RCD_LINK}"
-          log_info "Lien symbolique créé : ${RCD_LINK} → ${RCD_SHARED}"
-          if ! grep -q "${SERVICE_RC_NAME}_enable" /etc/rc.conf 2>/dev/null; then
-            printf "\n# ${APP_FULL_NAME} — ajouté par deploy le %s\n" "$(date)" \
-              | sudo tee -a /etc/rc.conf >/dev/null
-            printf '%s_enable="YES"\n' "${SERVICE_RC_NAME}" | sudo tee -a /etc/rc.conf >/dev/null
-            log_info "Ligne ajoutée dans /etc/rc.conf."
-          else
-            log_info "${SERVICE_RC_NAME}_enable déjà présent dans /etc/rc.conf."
-          fi
-        }
+        SHELL_EOF
+        init_rcd_function(rcd_b64) +
+        <<-'SHELL_EOF'
 
         # ---------------------------------------------------------------------------
         # create_database : crée l'utilisateur et la base PostgreSQL (sans migrations ni seed)
