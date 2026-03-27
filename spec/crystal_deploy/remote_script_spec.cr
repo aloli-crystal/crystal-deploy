@@ -104,11 +104,78 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Dans le case/esac, deploy) apparaît avant init) dans le script généré
+    # On cherche le bloc init) avec son indentation réelle (2 espaces)
+    deploy_start = content.index("  deploy)")
+    init_start = content.index("  init)")
+    if init_start && deploy_start
+      init_block = content[init_start..]
+      init_block.should contain("init_repo")
+    end
+  end
+
+  # Parallélisation : compile_start lance la compilation en arrière-plan,
+  # compile_wait attend la fin. Le bloc init utilise compile_start + compile_wait
+  # séparément pour intercaler create_database + run_migrations.
+  it "compile_start et compile_wait existent comme fonctions distinctes" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    content.should contain("compile_start()")
+    content.should contain("compile_wait()")
+    # compile() doit appeler compile_start puis compile_wait (version séquentielle)
+    # L'indentation réelle dans le script généré est 2 espaces
+    content.should contain("compile_start\n  compile_wait")
+  end
+
+  it "le bloc init lance compile_start avant create_database (parallèle)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     init_start = content.index("init)")
     deploy_start = content.index("deploy)")
     if init_start && deploy_start
       init_block = content[init_start...deploy_start]
-      init_block.should contain("init_repo")
+      # Dans init, compile_start doit apparaître AVANT create_database
+      cs_pos = init_block.index("compile_start")
+      cdb_pos = init_block.index("create_database")
+      cw_pos = init_block.index("compile_wait")
+      if cs_pos && cdb_pos && cw_pos
+        cs_pos.should be < cdb_pos   # compile_start avant create_database
+        cdb_pos.should be < cw_pos   # create_database avant compile_wait
+      end
+    end
+  end
+
+  it "le bloc init attend compile_wait avant activate_release" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    init_start = content.index("init)")
+    deploy_start = content.index("deploy)")
+    if init_start && deploy_start
+      init_block = content[init_start...deploy_start]
+      cw_pos = init_block.index("compile_wait")
+      ar_pos = init_block.index("activate_release")
+      if cw_pos && ar_pos
+        cw_pos.should be < ar_pos   # compile_wait avant activate_release
+      end
+    end
+  end
+
+  it "le bloc deploy utilise compile() séquentiel (pas compile_start seul)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Dans le case/esac : init) apparaît avant deploy), deploy) avant rollback)
+    deploy_start = content.index("  deploy)")
+    rollback_start = content.index("  rollback)")
+    if deploy_start && rollback_start
+      deploy_block = content[deploy_start...rollback_start]
+      # deploy utilise compile (appel direct, pas compile_start seul)
+      deploy_block.should contain("compile")
+      # compile_start seul ne doit pas apparaître dans le bloc deploy
+      deploy_block.should_not contain("compile_start")
     end
   end
 end

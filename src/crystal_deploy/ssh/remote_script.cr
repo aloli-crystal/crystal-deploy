@@ -508,8 +508,13 @@ module CrystalDeploy
           log_info "Fichiers partagés liés."
         }
 
-        compile() {
-          log_section "Compilation Crystal (mode release)"
+        # ---------------------------------------------------------------------------
+        # compile_start : lance la compilation en arrière-plan dans une session tmux.
+        # Retourne immédiatement pour permettre d'exécuter d'autres tâches en parallèle.
+        # Appeler compile_wait ensuite pour attendre la fin et vérifier le résultat.
+        # ---------------------------------------------------------------------------
+        compile_start() {
+          log_section "Compilation Crystal (mode release) — démarrage en arrière-plan"
           COMPILE_LOG="/tmp/compile-${APP_FULL_NAME}-${TIMESTAMP}.log"
           COMPILE_SESSION="compile-${APP_FULL_NAME}"
           COMPILE_SCRIPT="/tmp/compile-script-${APP_FULL_NAME}-${TIMESTAMP}.sh"
@@ -528,18 +533,33 @@ module CrystalDeploy
           chmod 755 "${COMPILE_SCRIPT}"
           sudo chown "${APP_USER}" "${COMPILE_SCRIPT}"
           if command -v tmux >/dev/null 2>&1; then
-            log_info "Compilation dans tmux (session : ${COMPILE_SESSION})..."
-            printf "  En cas de coupure SSH : tmux attach -t %s\n" "${COMPILE_SESSION}"
             tmux new-session -d -s "${COMPILE_SESSION}" \
-              "sudo su -m ${APP_USER} -c 'sh ${COMPILE_SCRIPT}'"
+              "sudo su ${APP_USER} -c 'sh ${COMPILE_SCRIPT}'"
+            log_info "Compilation lancée en arrière-plan (session tmux : ${COMPILE_SESSION})"
+            printf "  En cas de coupure SSH : tmux attach -t %s\n" "${COMPILE_SESSION}"
+          else
+            # Pas de tmux : lancer en arrière-plan avec & et noter le PID
+            sudo su "${APP_USER}" -c "sh ${COMPILE_SCRIPT}" &
+            COMPILE_BG_PID=$!
+            log_info "Compilation lancée en arrière-plan (PID : ${COMPILE_BG_PID})"
+          fi
+        }
+
+        # ---------------------------------------------------------------------------
+        # compile_wait : attend la fin de la compilation (tmux ou PID) et vérifie
+        # le résultat. Doit être appelée après compile_start, avant activate_release.
+        # ---------------------------------------------------------------------------
+        compile_wait() {
+          log_section "Attente de la fin de la compilation"
+          if command -v tmux >/dev/null 2>&1; then
             ELAPSED=0
             while tmux has-session -t "${COMPILE_SESSION}" 2>/dev/null; do
               sleep 10; ELAPSED=$((ELAPSED + 10))
               printf "  [%ds] Compilation en cours...\r" "${ELAPSED}"
             done
             printf "\n"
-          else
-            sudo su -m "${APP_USER}" -c "sh ${COMPILE_SCRIPT}"
+          elif [ -n "${COMPILE_BG_PID:-}" ]; then
+            wait "${COMPILE_BG_PID}" || true
           fi
           if ! grep -q "COMPILE_OK" "${COMPILE_LOG}" 2>/dev/null; then
             log_error "Échec de la compilation. Consultez : ${COMPILE_LOG}"
@@ -547,6 +567,15 @@ module CrystalDeploy
           fi
           sudo chmod 755 "${RELEASE_DIR}/bin/${APP_FULL_NAME}"
           log_info "Binaire compilé : ${RELEASE_DIR}/bin/${APP_FULL_NAME}"
+        }
+
+        # ---------------------------------------------------------------------------
+        # compile : version séquentielle (utilisée par deploy).
+        # Lance la compilation et attend immédiatement la fin.
+        # ---------------------------------------------------------------------------
+        compile() {
+          compile_start
+          compile_wait
         }
 
         # ---------------------------------------------------------------------------
@@ -757,9 +786,15 @@ module CrystalDeploy
               DEPLOY_START=$(date +%s)
               clone_repo
               link_shared
-              compile
+              # Lancer la compilation en arrière-plan : elle prend ~200s.
+              # Pendant ce temps, créer la base et appliquer les migrations
+              # (bin/marten ne nécessite pas le binaire applicatif compilé).
+              compile_start
               create_database
               run_migrations
+              # Point de synchronisation : attendre la fin de la compilation
+              # avant d'activer la release (le binaire doit exister).
+              compile_wait
               activate_release
               init_rcd
               run_seed
