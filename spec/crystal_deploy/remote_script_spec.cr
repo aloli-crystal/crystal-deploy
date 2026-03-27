@@ -227,6 +227,26 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
+  # CORRECTIF : marten ne définit pas de target dans shard.yml.
+  # bin/marten est créé par le postinstall de shards install (precompile_marten_cli).
+  # 'shards build marten' échoue avec 'Targets not defined in shard.yml'.
+  it "shards_prepare n'appelle pas shards build marten (postinstall s'en charge)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    shards_start = content.index("shards_prepare() {")
+    compile_start_pos = content.index("compile_start() {")
+    if shards_start && compile_start_pos
+      shards_body = content[shards_start...compile_start_pos]
+      # shards_prepare ne doit PAS appeler 'shards build marten'
+      shards_body.should_not contain("shards build marten")
+      # shards_prepare doit appeler shards install --production
+      shards_body.should contain("shards install --production")
+      # shards_prepare doit vérifier que bin/marten est bien présent après install
+      shards_body.should contain("bin/marten")
+    end
+  end
+
   it "le bloc deploy utilise shards_prepare + compile_start + compile_wait (parallélisé)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)

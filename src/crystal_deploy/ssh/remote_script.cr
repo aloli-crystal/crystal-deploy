@@ -541,24 +541,33 @@ module CrystalDeploy
         }
 
         # ---------------------------------------------------------------------------
-        # shards_prepare : installe les dépendances et compile bin/marten.
+        # shards_prepare : installe les dépendances Crystal (shards install).
         # Étape séquentielle rapide (~15s) à exécuter AVANT compile_start.
-        # Permet de rendre bin/marten disponible pour run_migrations pendant
-        # que crystal build --release tourne en arrière-plan.
+        #
+        # bin/marten est créé AUTOMATIQUEMENT par le script postinstall de marten
+        # (lib/marten/scripts/precompile_marten_cli) lors de shards install.
+        # Il ne faut PAS appeler 'shards build marten' : marten ne définit pas
+        # de target dans son shard.yml — c'est le postinstall qui compile le CLI.
+        #
+        # Après shards_prepare, bin/marten est disponible pour run_migrations
+        # pendant que crystal build --release tourne en arrière-plan.
         # ---------------------------------------------------------------------------
         shards_prepare() {
           log_section "Installation des dépendances (shards)"
           COMPILE_LOG="/tmp/compile-${APP_FULL_NAME}-${TIMESTAMP}.log"
           cd "${RELEASE_DIR}" || exit 1
-          # Si le shard.lock est obsolete (source changee), shards install echoue.
-          # On tente d'abord install, et en cas d'echec on fait update pour regenerer le lock.
+          # Si le shard.lock est obsolète (source changée), shards install échoue.
+          # On tente d'abord install, et en cas d'échec on fait update pour régénérer le lock.
           sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards install --production" >> "${COMPILE_LOG}" 2>&1 || \
             sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards update --production" >> "${COMPILE_LOG}" 2>&1
           if [ "${FRAMEWORK}" = "marten" ]; then
-            # Compiler bin/marten (CLI : migrate, seed, etc.)
-            # bin/marten n'est pas fourni par shards install, il faut le compiler explicitement.
-            sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards build marten" >> "${COMPILE_LOG}" 2>&1
-            log_info "bin/marten compilé."
+            # Vérifier que bin/marten a bien été créé par le postinstall de marten
+            # (lib/marten/scripts/precompile_marten_cli exécuté par shards install)
+            if [ -f "${RELEASE_DIR}/bin/marten" ]; then
+              log_info "bin/marten disponible (créé par le postinstall de marten)."
+            else
+              log_warn "bin/marten absent après shards install — migrations et seed ignorés."
+            fi
           fi
         }
 
