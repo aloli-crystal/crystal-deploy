@@ -50,7 +50,23 @@ describe CrystalDeploy::Generators::Rcd do
     gen = CrystalDeploy::Generators::Rcd.new(config, env)
     content = gen.generate
     content.should contain("name=\"mon_app__developpement\"")
-    content.should contain("rcvar=\"mon_app__developpement_enable\"")
+    # rcvar utilise ${name} pour être résolu dynamiquement par rc.subr
+    content.should contain("rcvar=\"${name}_enable\"")
+  end
+
+  it "génère un wrapper shell qui charge le .env avant de lancer le binaire" do
+    config, env = sample_config_and_env
+    gen = CrystalDeploy::Generators::Rcd.new(config, env)
+    content = gen.generate
+    # La fonction _generate_wrapper doit être présente
+    content.should contain("_generate_wrapper")
+    # Le wrapper doit charger le .env avec set -a / set +a
+    content.should contain("set -a")
+    content.should contain("set +a")
+    # daemon(8) doit lancer le wrapper, pas le binaire directement
+    content.should contain("mon_app__developpement_wrapper")
+    # Le wrapper est dans shared/bin/
+    content.should contain("shared/bin/mon-app--developpement")
   end
 
   it "contient la boucle d'attente sur pidfile et socket" do
@@ -69,5 +85,15 @@ describe CrystalDeploy::Generators::Rcd do
     content.should contain("chown")
     content.should contain("www")
     content.should contain("chmod 660")
+  end
+
+  it "utilise un seul pidfile (superviseur daemon) et non un double pidfile" do
+    config, env = sample_config_and_env
+    gen = CrystalDeploy::Generators::Rcd.new(config, env)
+    content = gen.generate
+    # Un seul pidfile (-P pour le superviseur daemon)
+    content.should contain("-P \"${mon_app__developpement_pidfile}\"")
+    # Pas de pidfile_child (supprimé — le wrapper gère le processus)
+    content.should_not contain("pidfile_child")
   end
 end

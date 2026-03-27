@@ -222,8 +222,12 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     if m = rcd_b64_match
       # Vérifier que le contenu décodé contient bien un script rc.d valide
       decoded = Base64.decode_string(m[1])
-      decoded.should contain("PROVIDE:")
+      # Le nouveau script n'a plus de ligne # PROVIDE: (remplacée par un en-tête complet)
+      # Vérifier les éléments essentiels du script rc.d
+      decoded.should contain(". /etc/rc.subr")
       decoded.should contain("run_rc_command")
+      decoded.should contain("_generate_wrapper")
+      decoded.should contain("set -a")
     end
   end
 
