@@ -638,6 +638,28 @@ module CrystalDeploy
         }
 
         # ---------------------------------------------------------------------------
+        # collect_assets : collecte les assets statiques Marten dans public/assets/
+        # (bin/marten collectassets --no-input)
+        #
+        # Marten ne sert les assets en production que via nginx, qui les cherche dans
+        # current/public/assets/. Ce dossier n'est PAS versionné dans git (il est
+        # généré), donc il faut l'alimenter explicitement après shards install.
+        # ---------------------------------------------------------------------------
+        collect_assets() {
+          [ "${FRAMEWORK}" != "marten" ] && return 0
+          MARTEN_BIN="${RELEASE_DIR}/bin/marten"
+          if [ ! -f "${MARTEN_BIN}" ]; then
+            log_warn "bin/marten introuvable — collecte des assets ignorée."
+            return 0
+          fi
+          log_section "Collecte des assets (bin/marten collectassets)"
+          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten collectassets --no-input" || {
+            log_warn "Échec de la collecte des assets. Les fichiers CSS/JS/images peuvent être absents."
+          }
+          log_info "Assets collectées dans public/assets/."
+        }
+
+        # ---------------------------------------------------------------------------
         # run_migrations : exécuté après compilation, avant activation de la release
         # Marten uniquement — Kemal gère le schéma via init_database
         #
@@ -870,6 +892,7 @@ module CrystalDeploy
             # Point de synchronisation : attendre la fin de crystal build
             # avant d'activer la release (le binaire applicatif doit exister).
             compile_wait
+            collect_assets
             activate_release
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
@@ -918,6 +941,7 @@ module CrystalDeploy
             run_seed
             # Point de synchronisation : attendre la fin de crystal build
             compile_wait
+            collect_assets
             activate_release
             init_rcd
             start_service
