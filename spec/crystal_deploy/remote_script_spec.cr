@@ -68,4 +68,47 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     # Le fallback doit être enchaîné avec || (ou logique)
     content.should match(/shards install --production.*\|\|.*shards update --production/m)
   end
+
+  # Régression potentielle : git clone complet à chaque deploy.
+  # Correction : dépôt bare partagé dans shared/repo.git.
+  # init_repo clone --bare une seule fois ; clone_repo fait fetch + git archive.
+  it "init_repo clone le dépôt en mode bare dans shared/repo.git" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    content.should contain("git clone --bare")
+    content.should contain("REPO_DIR")
+    # init_repo doit être idempotent (ne pas re-cloner si déjà présent)
+    content.should contain("[ -d \"${REPO_DIR}\"")
+  end
+
+  it "clone_repo utilise git fetch + git archive (pas git clone --depth)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # Doit utiliser fetch pour mettre à jour le bare (deltas uniquement)
+    content.should contain("fetch --prune origin")
+    # Doit extraire via git archive (pas de .git dans la release)
+    content.should contain("git archive")
+    content.should contain("tar -x -C")
+    # clone_repo ne doit PAS faire de git clone --depth
+    clone_start = content.index("clone_repo() {")
+    link_start = content.index("link_shared() {")
+    if clone_start && link_start
+      clone_body = content[clone_start...link_start]
+      clone_body.should_not contain("git clone --depth")
+    end
+  end
+
+  it "init_repo est appelé dans le bloc init (avant deploy)" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    init_start = content.index("init)")
+    deploy_start = content.index("deploy)")
+    if init_start && deploy_start
+      init_block = content[init_start...deploy_start]
+      init_block.should contain("init_repo")
+    end
+  end
 end

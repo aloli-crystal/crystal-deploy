@@ -66,6 +66,7 @@ module CrystalDeploy
         TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
         RELEASE_DIR="${RELEASES_DIR}/${TIMESTAMP}"
         GRACEFUL_TIMEOUT="${GRACEFUL_TIMEOUT:-30}"
+        REPO_DIR="${SHARED_DIR}/repo.git"   # dépôt bare partagé entre toutes les releases
 
         # Verrou de déploiement : évite deux déploiements simultanés
         LOCKFILE="/tmp/.deploy-${APP_FULL_NAME}.lock"
@@ -166,6 +167,23 @@ module CrystalDeploy
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/log"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/db"
           log_info "Répertoires créés."
+        }
+
+        # ---------------------------------------------------------------------------
+        # init_repo : clone le dépôt en mode bare dans shared/repo.git
+        # Appelé une seule fois lors du premier init.
+        # Les déploiements suivants utilisent git fetch (deltas uniquement).
+        # ---------------------------------------------------------------------------
+        init_repo() {
+          if [ -d "${REPO_DIR}" ]; then
+            log_info "Dépôt bare déjà présent : ${REPO_DIR}"
+            return 0
+          fi
+          log_section "Initialisation du dépôt bare"
+          sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${REPO_DIR}"
+          sudo su "${APP_USER}" -c \
+            "git clone --bare ${REPO_URL} ${REPO_DIR}"
+          log_info "Dépôt bare cloné : ${REPO_DIR}"
         }
 
         init_env() {
@@ -468,11 +486,17 @@ module CrystalDeploy
         # DEPLOY
         # ==========================================================================
         clone_repo() {
-          log_section "Clonage de la branche ${REPO_BRANCH}"
+          log_section "Mise à jour du dépôt et extraction de la release"
+          # 1. Mettre à jour le bare avec les derniers commits (seulement les deltas)
+          sudo su "${APP_USER}" -c \
+            "git --git-dir=${REPO_DIR} fetch --prune origin"
+          log_info "Dépôt bare mis à jour."
+          # 2. Extraire la branche dans le répertoire de release via git archive
+          #    (pas de répertoire .git dans la release — propre et minimal)
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 755 "${RELEASE_DIR}"
-          sudo su -m "${APP_USER}" -c \
-            "git clone --depth 1 --branch ${REPO_BRANCH} ${REPO_URL} ${RELEASE_DIR}"
-          log_info "Sources clonées dans ${RELEASE_DIR}"
+          sudo su "${APP_USER}" -c \
+            "git --git-dir=${REPO_DIR} archive ${REPO_BRANCH} | tar -x -C ${RELEASE_DIR}"
+          log_info "Sources extraites dans ${RELEASE_DIR} (branche ${REPO_BRANCH})"
         }
 
         link_shared() {
@@ -723,12 +747,13 @@ module CrystalDeploy
             init_directories
             init_env
             init_nginx
+            init_repo
             # Cloner le dépôt et effectuer une première release si aucun deploy n'existe
             if [ -L "${CURRENT_LINK}" ]; then
               init_rcd
               init_database
             else
-              log_section "Première release (clone + compilation)"
+              log_section "Première release (fetch + extraction + compilation)"
               DEPLOY_START=$(date +%s)
               clone_repo
               link_shared
