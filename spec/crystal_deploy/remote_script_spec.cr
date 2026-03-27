@@ -174,9 +174,11 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     if init_start && deploy_start
       init_block = content[init_start...deploy_start]
       ar_pos = init_block.index("activate_release")
-      rcd_pos = init_block.index("init_rcd")
-      if ar_pos && rcd_pos
-        ar_pos.should be < rcd_pos   # activate_release avant init_rcd
+      # Chercher l'APPEL de init_rcd (ligne seule avec indentation) et non sa définition
+      # La définition est "init_rcd() {" ; l'appel est "            init_rcd" (sans paren)
+      rcd_call_pos = init_block.index(/^\s+init_rcd\s*$/)  # ligne seule, pas de (){}
+      if ar_pos && rcd_call_pos
+        ar_pos.should be < rcd_call_pos   # activate_release avant l'appel de init_rcd
       end
     end
   end
