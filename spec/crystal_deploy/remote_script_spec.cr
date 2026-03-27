@@ -163,6 +163,24 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
+  # init_rcd doit être appelé APRES activate_release dans init :
+  # le script rc.d est dans current/config/ qui n'existe qu'après activation.
+  it "init_rcd est appelé après activate_release dans le bloc init" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    init_start = content.index("  init)")
+    deploy_start = content.index("  deploy)")
+    if init_start && deploy_start
+      init_block = content[init_start...deploy_start]
+      ar_pos = init_block.index("activate_release")
+      rcd_pos = init_block.index("init_rcd")
+      if ar_pos && rcd_pos
+        ar_pos.should be < rcd_pos   # activate_release avant init_rcd
+      end
+    end
+  end
+
   it "le bloc deploy utilise compile() séquentiel (pas compile_start seul)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)

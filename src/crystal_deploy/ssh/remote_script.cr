@@ -777,42 +777,41 @@ module CrystalDeploy
             init_env
             init_nginx
             init_repo
-            # Cloner le dépôt et effectuer une première release si aucun deploy n'existe
-            if [ -L "${CURRENT_LINK}" ]; then
-              init_rcd
-              init_database
+            # Dans tous les cas, effectuer une release complète :
+            # init_rcd a besoin du script rc.d dans current/config/ qui n'existe
+            # qu'après compilation et activation d'une release.
+            log_section "Release (fetch + extraction + compilation)"
+            DEPLOY_START=$(date +%s)
+            clone_repo
+            link_shared
+            # Lancer la compilation en arrière-plan : elle prend ~200s.
+            # Pendant ce temps, créer la base et appliquer les migrations
+            # (bin/marten ne nécessite pas le binaire applicatif compilé).
+            compile_start
+            create_database
+            run_migrations
+            # Point de synchronisation : attendre la fin de la compilation
+            # avant d'activer la release (le binaire doit exister).
+            compile_wait
+            activate_release
+            # init_rcd doit être appelé APRES activate_release :
+            # le script rc.d est dans current/config/ qui vient d'être créé.
+            init_rcd
+            run_seed
+            start_service
+            reload_nginx
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            if [ "${FRAMEWORK}" = "marten" ]; then
+              APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
+                | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
             else
-              log_section "Première release (fetch + extraction + compilation)"
-              DEPLOY_START=$(date +%s)
-              clone_repo
-              link_shared
-              # Lancer la compilation en arrière-plan : elle prend ~200s.
-              # Pendant ce temps, créer la base et appliquer les migrations
-              # (bin/marten ne nécessite pas le binaire applicatif compilé).
-              compile_start
-              create_database
-              run_migrations
-              # Point de synchronisation : attendre la fin de la compilation
-              # avant d'activer la release (le binaire doit exister).
-              compile_wait
-              activate_release
-              init_rcd
-              run_seed
-              start_service
-              reload_nginx
-              DEPLOY_END=$(date +%s)
-              DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
-              if [ "${FRAMEWORK}" = "marten" ]; then
-                APP_URL_FINAL=$(grep '^MARTEN_ALLOWED_HOSTS=' "${SHARED_DIR}/.env" 2>/dev/null \
-                  | cut -d= -f2- | tr -d '"' | cut -d, -f1 | tr -d ' ')
-              else
-                APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
-                  | cut -d= -f2- | tr -d '"')
-              fi
-              log_info "Première release compilée et activée."
-              log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
-              log_info "Site disponible : ${APP_URL_FINAL:-https://${APP_FULL_NAME}.example.app}"
+              APP_URL_FINAL=$(grep '^APP_URL=' "${SHARED_DIR}/.env" 2>/dev/null \
+                | cut -d= -f2- | tr -d '"')
             fi
+            log_info "Release compilée et activée."
+            log_info "Durée           : $((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
+            log_info "Site disponible : ${APP_URL_FINAL:-https://${APP_FULL_NAME}.example.app}"
             log_section "Initialisation [${ENV_NAME}] terminée."
             ;;
           deploy)
