@@ -1,5 +1,3 @@
-require "openssl/hmac"
-
 module CrystalDeploy
   module DNS
     # Implémentation OVH de l'interface DNS.
@@ -8,6 +6,10 @@ module CrystalDeploy
     # Credentials lus dans cet ordre de priorité :
     #   1. Variables d'environnement : OVH_APP_KEY, OVH_APP_SECRET, OVH_CONSUMER_KEY
     #   2. Fichier .env local (LOCAL_ENV_PATH)
+    #
+    # Signature OVH : SHA1 simple (PAS HMAC) sur la chaîne
+    #   APP_SECRET+CONSUMER_KEY+METHOD+URL+BODY+TIMESTAMP
+    # Calculée via `openssl dgst -sha1 -hex` (identique à table-de-gaya/config/deploy.sh).
     class Ovh < Base
       LOCAL_ENV_PATH = ".env"
       API_URL        = "https://eu.api.ovh.com/1.0"
@@ -90,13 +92,18 @@ module CrystalDeploy
           return
         end
 
+        unless Process.find_executable("openssl")
+          log_warn "openssl introuvable. Créez le CNAME manuellement dans votre espace OVH."
+          return
+        end
+
         ts = `curl -s #{API_URL}/auth/time`.strip
 
         # Vérifier si le CNAME existe déjà
         # L'API OVH retourne un tableau JSON d'IDs numériques quand des enregistrements
         # existent, ex: [12345678] ou [12345678, 87654321].
         # Si aucun enregistrement : []
-        # En cas d'erreur d'authentification : {"message":"..."} (sans le mot "error")
+        # En cas d'erreur d'authentification : {"class":"...","message":"..."} (sans "error")
         # → On vérifie strictement que la réponse est un tableau JSON non vide de nombres.
         get_url = "#{API_URL}/domain/zone/#{zone}/record?fieldType=CNAME&subDomain=#{subdomain}"
         get_sig = sign(@app_secret, @consumer_key, "GET", get_url, "", ts)
@@ -109,7 +116,6 @@ module CrystalDeploy
           "#{get_url}"`.strip
 
         # Un tableau non vide d'IDs numériques commence par "[" suivi d'un chiffre
-        # (après espaces éventuels). Ex: [12345678] ou [ 12345678, 87654321 ]
         cname_exists = !!(existing =~ /^\[\s*\d/)
 
         if cname_exists
@@ -162,11 +168,29 @@ module CrystalDeploy
         log_info I18n.t("dns.zone_refreshed")
       end
 
+      # Signature OVH : SHA1 SIMPLE (pas HMAC) sur la chaîne
+      #   APP_SECRET+CONSUMER_KEY+METHOD+URL+BODY+TIMESTAMP
+      #
+      # L'API OVH utilise un hash SHA1 ordinaire (openssl dgst -sha1), PAS un HMAC.
+      # Référence : table-de-gaya/config/deploy.sh, fonction ovh_sign()
+      #   printf '%s+%s+%s+%s+%s+%s' secret ck method url body ts
+      #     | openssl dgst -sha1 -hex | awk '{print $2}'
+      #
+      # sign_public est exposé pour les tests (même logique que sign).
+      def sign_public(secret : String, consumer : String,
+                      method : String, url : String,
+                      body : String, ts : String) : String
+        sign(secret, consumer, method, url, body, ts)
+      end
+
       private def sign(secret : String, consumer : String,
                        method : String, url : String,
                        body : String, ts : String) : String
         data = "#{secret}+#{consumer}+#{method}+#{url}+#{body}+#{ts}"
-        OpenSSL::HMAC.hexdigest(:sha1, secret, data)
+        # openssl dgst -sha1 -hex retourne "SHA1(stdin)= <hex>" ou "(stdin)= <hex>"
+        # On extrait le hash hexadécimal avec split sur les espaces
+        raw = `printf '%s' #{Process.quote(data)} | openssl dgst -sha1 -hex`
+        raw.strip.split(/\s+/).last
       end
 
       # ── État interne ───────────────────────────────────────────────────────
