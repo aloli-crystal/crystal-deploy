@@ -15,6 +15,14 @@ module CrystalDeploy
     #
     # Le wrapper est (re)généré à chaque démarrage via precmd.
     # Cela garantit que les variables d'environnement sont toujours à jour.
+    #
+    # REQUIRE: postgresql
+    #   Assure que PostgreSQL est démarré avant ce service.
+    #   Indispensable pour les connexions via socket Unix (/tmp/.s.PGSQL.5432).
+    #   Sans cette directive, le service peut démarrer avant PostgreSQL au boot
+    #   et échouer silencieusement à se connecter à la base de données.
+    #   Peut être surchargé via #{rc_name}_require dans /etc/rc.conf si nécessaire
+    #   (ex : "mysql" pour MariaDB, ou "" pour désactiver la dépendance).
     class Rcd
       def initialize(@config : Config, @env : Environment)
       end
@@ -55,6 +63,10 @@ module CrystalDeploy
         # Activation dans /etc/rc.conf :
         #   #{rc_name}_enable="YES"
         #
+        # Pour surcharger la dépendance de démarrage (défaut : postgresql) :
+        #   #{rc_name}_require="mysql"   # MariaDB
+        #   #{rc_name}_require=""        # aucune dépendance
+        #
         # Commandes :
         #   service #{rc_name} start|stop|restart|status
         # =============================================================================
@@ -78,6 +90,10 @@ module CrystalDeploy
         : ${#{rc_name}_pidfile:="/tmp/.#{full_name}.pid"}
         : ${#{rc_name}_socket:="#{socket_path}"}
         : ${#{rc_name}_wrapper:="${APP_HOME}/shared/bin/#{full_name}"}
+        # Dépendance de démarrage : assure que PostgreSQL est prêt avant ce service.
+        # Indispensable pour les connexions via socket Unix (/tmp/.s.PGSQL.5432).
+        : ${#{rc_name}_require:="postgresql"}
+        REQUIRE="${#{rc_name}_require}"
 
         # Hooks
         start_precmd="${name}_precmd"

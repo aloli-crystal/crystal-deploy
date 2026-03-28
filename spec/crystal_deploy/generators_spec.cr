@@ -42,6 +42,16 @@ describe CrystalDeploy::Generators::Nginx do
     content.should contain("listen 443 ssl http2")
     content.should contain("# server {")
   end
+
+  it "inclut les directives error_page 502/503/504 pointant vers shared/public" do
+    config, env = sample_config_and_env
+    gen = CrystalDeploy::Generators::Nginx.new(config, env)
+    content = gen.generate
+    content.should contain("error_page 502 503 504 /erreur-indisponible.html")
+    content.should contain("location = /erreur-indisponible.html")
+    content.should contain("/home/mon-app--developpement/shared/public")
+    content.should contain("internal")
+  end
 end
 
 describe CrystalDeploy::Generators::Rcd do
@@ -95,5 +105,16 @@ describe CrystalDeploy::Generators::Rcd do
     content.should contain("-P \"${mon_app__developpement_pidfile}\"")
     # Pas de pidfile_child (supprimé — le wrapper gère le processus)
     content.should_not contain("pidfile_child")
+  end
+
+  it "inclut la directive REQUIRE postgresql pour le démarrage ordonné" do
+    config, env = sample_config_and_env
+    gen = CrystalDeploy::Generators::Rcd.new(config, env)
+    content = gen.generate
+    # La variable _require doit être définie avec postgresql comme valeur par défaut
+    content.should contain("mon_app__developpement_require")
+    content.should contain("postgresql")
+    # REQUIRE doit être assigné depuis la variable configurable
+    content.should contain("REQUIRE=")
   end
 end

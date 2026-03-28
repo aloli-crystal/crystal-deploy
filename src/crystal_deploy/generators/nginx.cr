@@ -68,6 +68,12 @@ module CrystalDeploy
             access_log /var/log/nginx/#{full_name}.access.log;
             error_log  /var/log/nginx/#{full_name}.error.log;
 
+            error_page 502 503 504 /erreur-indisponible.html;
+            location = /erreur-indisponible.html {
+                root #{app_home}/shared/public;
+                internal;
+            }
+
             location / {
                 proxy_pass         http://#{rc_name};
                 proxy_set_header   Host              $host;

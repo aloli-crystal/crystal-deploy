@@ -14,8 +14,8 @@ Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 * Déploiement SSH depuis votre terminal local — aucune dépendance côté serveur
 * Support natif **Marten** et **Kemal** via le champ `framework` dans `deploy.yml`
 * Structure Capistrano : `releases/`, `current/`, `shared/`
-* Génération dynamique du script `rc.d` FreeBSD (avec `daemon(8)` et redémarrage automatique)
-* Génération dynamique du `nginx.conf` (mode pkg FreeBSD ou Passenger dans `/opt`)
+* Génération dynamique du script `rc.d` FreeBSD (avec `daemon(8)`, redémarrage automatique et dépendance `REQUIRE: postgresql`)
+* Génération dynamique du `nginx.conf` (mode pkg FreeBSD ou Passenger dans `/opt`) avec **pages d'erreur personnalisées** (502/503/504)
 * Dialogue interactif pour construire le `.env` lors de l'initialisation
 * Création automatique de l'utilisateur PostgreSQL et de la base de données
 * Création du CNAME OVH via l'API REST (clés lues depuis le `.env`)
@@ -269,6 +269,8 @@ bin/deploy status --preproduction
 └── shared/
     ├── .env                      ← persistant entre les deploys
     ├── nginx.conf                ← généré par init
+    ├── public/
+    │   └── erreur-indisponible.html ← page d'erreur personnalisée (générée par init)
     └── log/
 
 /tmp/.mon-app--preproduction.pid   ← pidfile (convention /tmp comme PostgreSQL)

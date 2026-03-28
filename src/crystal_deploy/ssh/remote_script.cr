@@ -199,7 +199,64 @@ module CrystalDeploy
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/log"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/db"
+          sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 755 "${SHARED_DIR}/public"
           log_info "Répertoires créés."
+        }
+
+        # ---------------------------------------------------------------------------
+        # init_error_page : crée la page d'erreur personnalisée dans shared/public/
+        # Cette page remplace les pages d'erreur nginx (502/503/504) pour masquer
+        # la signature du serveur web.
+        # Le fichier est conservé entre les déploiements (dans shared/, pas current/).
+        # ---------------------------------------------------------------------------
+        init_error_page() {
+          log_section "Page d'erreur personnalisée"
+          ERROR_PAGE="${SHARED_DIR}/public/erreur-indisponible.html"
+          if [ -f "${ERROR_PAGE}" ]; then
+            log_info "Page d'erreur déjà présente : conservée telle quelle."
+            return 0
+          fi
+          sudo tee "${ERROR_PAGE}" >/dev/null << 'ERROR_HTML'
+        <!DOCTYPE html>
+        <html lang="fr">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Service momentanément indisponible</title>
+          <style>
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+              background: #f5f5f5;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+              margin: 0;
+            }
+            .container {
+              text-align: center;
+              background: white;
+              padding: 3rem 4rem;
+              border-radius: 8px;
+              box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+              max-width: 480px;
+            }
+            h1 { color: #333; font-size: 1.5rem; margin-bottom: 1rem; }
+            p  { color: #666; line-height: 1.6; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>Service momentanément indisponible</h1>
+            <p>Le service est en cours de maintenance ou de démarrage.<br>
+               Merci de réessayer dans quelques instants.</p>
+          </div>
+        </body>
+        </html>
+        ERROR_HTML
+          sudo chmod 644 "${ERROR_PAGE}"
+          sudo chown "${APP_USER}:${APP_GROUP}" "${ERROR_PAGE}"
+          log_info "Page d'erreur créée : ${ERROR_PAGE}"
         }
 
         # ---------------------------------------------------------------------------
@@ -459,6 +516,12 @@ module CrystalDeploy
 
             access_log /var/log/nginx/${APP_FULL_NAME}.access.log;
             error_log  /var/log/nginx/${APP_FULL_NAME}.error.log;
+
+            error_page 502 503 504 /erreur-indisponible.html;
+            location = /erreur-indisponible.html {
+                root ${APP_HOME}/shared/public;
+                internal;
+            }
 
             location / {
                 proxy_pass         http://${SERVICE_RC_NAME};
@@ -869,6 +932,7 @@ module CrystalDeploy
             log_section "Initialisation [${ENV_NAME}] (framework: ${FRAMEWORK})"
             init_user
             init_directories
+            init_error_page
             init_env
             init_nginx
             init_repo
