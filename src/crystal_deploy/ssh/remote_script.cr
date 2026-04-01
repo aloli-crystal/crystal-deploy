@@ -87,7 +87,7 @@ module CrystalDeploy
 
         # --- Variables dérivées ---
         APP_FULL_NAME="${APP_NAME}--${ENV_NAME}"
-        APP_USER="deploy"
+        APP_USER="$(whoami)"
         APP_GROUP="www"
         APP_HOME="/home/${APP_FULL_NAME}"
         RELEASES_DIR="${APP_HOME}/releases"
@@ -138,8 +138,10 @@ module CrystalDeploy
         }
 
         # ---------------------------------------------------------------------------
-        # run_with_env USER DIR CMD...
-        # Exécute CMD en tant que USER depuis DIR avec les variables du .env chargées.
+        # run_with_env DIR CMD...
+        # Exécute CMD depuis DIR avec les variables du .env chargées.
+        # Le premier argument (USER) est conservé par compatibilité mais ignoré :
+        # le script s'exécute en tant que l'utilisateur connecté (APP_USER).
         #
         # Stratégie : on génère un script wrapper /bin/sh temporaire qui exporte
         # chaque variable du .env avec 'export KEY=VALUE' ligne par ligne.
@@ -148,8 +150,8 @@ module CrystalDeploy
         # commencent par '_' ou d'autres caractères non-alphabétiques).
         # ---------------------------------------------------------------------------
         run_with_env() {
-          _RWE_USER="$1"; shift
-          _RWE_DIR="$1"; shift
+          _RWE_DIR="$2"
+          shift 2
           _RWE_CMD="$*"
           # Créer un script wrapper temporaire qui :
           #   1. Exporte chaque variable du .env avec 'export KEY=VALUE'
@@ -167,12 +169,9 @@ module CrystalDeploy
               done
           printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
           chmod 755 "${_RWE_WRAPPER}"
-          # IMPORTANT : pas de flag -m sur 'su'.
-          # sudo su -m preserve l'environnement complet de root, qui contient des
-          # variables systeme dont les noms commencent par des caracteres non-
-          # alphabetiques. FreeBSD /bin/sh les rejette avec "Nom de variable incorrect".
-          # Sans -m, su cree un environnement propre pour APP_USER.
-          sudo su "${_RWE_USER}" -c "/bin/sh ${_RWE_WRAPPER}"
+          # Exécution directe : l'utilisateur connecté (APP_USER) est celui qui
+          # exécute le script distant — pas besoin de sudo su.
+          /bin/sh "${_RWE_WRAPPER}"
           _RWE_STATUS=$?
           rm -f "${_RWE_WRAPPER}"
           return ${_RWE_STATUS}
@@ -279,20 +278,17 @@ module CrystalDeploy
             # Vérifier que le refspec fetch est bien configuré (init précédent sans ce correctif)
             CURRENT_FETCH=$(git --git-dir="${REPO_DIR}" config remote.origin.fetch 2>/dev/null || echo "")
             if [ "${CURRENT_FETCH}" != "+refs/heads/*:refs/heads/*" ]; then
-              sudo su "${APP_USER}" -c \
-                "git --git-dir=${REPO_DIR} config remote.origin.fetch '+refs/heads/*:refs/heads/*'"
+              git --git-dir="${REPO_DIR}" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
               log_info "Refspec fetch corrigé dans le bare."
             fi
             return 0
           fi
           log_section "Initialisation du dépôt bare"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${REPO_DIR}"
-          sudo su "${APP_USER}" -c \
-            "git clone --bare ${REPO_URL} ${REPO_DIR}"
+          git clone --bare "${REPO_URL}" "${REPO_DIR}"
           # Configurer le refspec fetch pour que git fetch --prune origin
           # mette à jour les branches locales du bare (absent par défaut en mode bare)
-          sudo su "${APP_USER}" -c \
-            "git --git-dir=${REPO_DIR} config remote.origin.fetch '+refs/heads/*:refs/heads/*'"
+          git --git-dir="${REPO_DIR}" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
           log_info "Dépôt bare cloné avec refspec fetch configuré : ${REPO_DIR}"
         }
 
@@ -583,14 +579,12 @@ module CrystalDeploy
         clone_repo() {
           log_section "Mise à jour du dépôt et extraction de la release"
           # 1. Mettre à jour le bare avec les derniers commits (seulement les deltas)
-          sudo su "${APP_USER}" -c \
-            "git --git-dir=${REPO_DIR} fetch --prune origin"
+          git --git-dir="${REPO_DIR}" fetch --prune origin
           log_info "Dépôt bare mis à jour."
           # 2. Extraire la branche dans le répertoire de release via git archive
           #    (pas de répertoire .git dans la release — propre et minimal)
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 755 "${RELEASE_DIR}"
-          sudo su "${APP_USER}" -c \
-            "git --git-dir=${REPO_DIR} archive ${REPO_BRANCH} | tar -x -C ${RELEASE_DIR}"
+          git --git-dir="${REPO_DIR}" archive "${REPO_BRANCH}" | tar -x -C "${RELEASE_DIR}"
           log_info "Sources extraites dans ${RELEASE_DIR} (branche ${REPO_BRANCH})"
         }
 
@@ -621,8 +615,8 @@ module CrystalDeploy
           cd "${RELEASE_DIR}" || exit 1
           # Si le shard.lock est obsolète (source changée), shards install échoue.
           # On tente d'abord install, et en cas d'échec on fait update pour régénérer le lock.
-          sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards install --production" >> "${COMPILE_LOG}" 2>&1 || \
-            sudo su "${APP_USER}" -c "cd ${RELEASE_DIR} && shards update --production" >> "${COMPILE_LOG}" 2>&1
+          sh -c "cd ${RELEASE_DIR} && shards install --production" >> "${COMPILE_LOG}" 2>&1 || \
+            sh -c "cd ${RELEASE_DIR} && shards update --production" >> "${COMPILE_LOG}" 2>&1
           if [ "${FRAMEWORK}" = "marten" ]; then
             # Vérifier que bin/marten a bien été créé par le postinstall de marten
             # (lib/marten/scripts/precompile_marten_cli exécuté par shards install)
@@ -653,15 +647,14 @@ module CrystalDeploy
         [ \$? -eq 0 ] && echo "COMPILE_OK" >> "${COMPILE_LOG}" || echo "COMPILE_FAIL" >> "${COMPILE_LOG}"
         COMPILE_EOF
           chmod 755 "${COMPILE_SCRIPT}"
-          sudo chown "${APP_USER}" "${COMPILE_SCRIPT}"
           if command -v tmux >/dev/null 2>&1; then
             tmux new-session -d -s "${COMPILE_SESSION}" \
-              "sudo su ${APP_USER} -c 'sh ${COMPILE_SCRIPT}'"
+              "sh ${COMPILE_SCRIPT}"
             log_info "Compilation lancée en arrière-plan (session tmux : ${COMPILE_SESSION})"
             printf "  En cas de coupure SSH : tmux attach -t %s\n" "${COMPILE_SESSION}"
           else
             # Pas de tmux : lancer en arrière-plan avec & et noter le PID
-            sudo su "${APP_USER}" -c "sh ${COMPILE_SCRIPT}" &
+            sh "${COMPILE_SCRIPT}" &
             COMPILE_BG_PID=$!
             log_info "Compilation lancée en arrière-plan (PID : ${COMPILE_BG_PID})"
           fi
@@ -745,8 +738,9 @@ module CrystalDeploy
           # On utilise un fichier temporaire pour préserver le code de retour
           # de bin/marten (un pipe ferait perdre $? au profit du code de sed).
           _MIGRATE_OUT=$(mktemp /tmp/.marten_migrate.XXXXXX)
-          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten migrate" > "${_MIGRATE_OUT}" 2>&1
-          _MIGRATE_RC=$?
+          # Le || true empêche set -e de tuer le script avant de capturer le code retour
+          run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/marten migrate" > "${_MIGRATE_OUT}" 2>&1 \
+            && _MIGRATE_RC=0 || _MIGRATE_RC=$?
           sed \
             -e 's/No pending migrations to apply/Aucune migration en attente./g' \
             -e 's/Running migrations:/Application des migrations :/g' \

@@ -5,21 +5,21 @@ require "../spec_helper"
 # ---------------------------------------------------------------------------
 
 describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
-  # Régression : sudo su -m utilisait le shell de l'utilisateur (zsh sur le serveur).
-  # De plus, set -a sur FreeBSD /bin/sh exporte aussi les variables héritées dont
-  # les noms commencent par '_' ou d'autres caractères non-alphabétiques, ce qui
-  # lève "Nom de variable incorrect".
-  # Correction : script wrapper avec 'export KEY=VALUE' ligne par ligne.
-  it "run_with_env utilise un script wrapper avec export (pas set -a)" do
+  # Régression : sudo su causait des problèmes sur FreeBSD (username too long,
+  # interaction avec set -e). De plus, set -a sur FreeBSD /bin/sh exporte aussi
+  # les variables héritées dont les noms commencent par '_' ou d'autres caractères
+  # non-alphabétiques, ce qui lève "Nom de variable incorrect".
+  # Correction : script wrapper avec 'export KEY=VALUE' exécuté directement.
+  it "run_with_env utilise un script wrapper avec export (pas set -a ni sudo su)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
-    # Utilise un script wrapper execute directement par /bin/sh
+    # Utilise un script wrapper exécuté directement par /bin/sh
     content.should contain("_RWE_WRAPPER")
     content.should contain("export %s")
-    # run_with_env doit utiliser sudo su sans -m (pas de preservation de l'env root)
-    # La ligne exacte generee par run_with_env :
-    content.should contain("sudo su \"${_RWE_USER}\" -c \"/bin/sh ${_RWE_WRAPPER}\"")
+    # run_with_env exécute le wrapper directement (pas de sudo su)
+    content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
+    content.should_not contain("sudo su \"${_RWE_USER}\"")
     # Ne doit PAS utiliser set -a dans le code shell (hors commentaires)
     code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
     code_lines.join("\n").should_not contain("set -a")
@@ -322,7 +322,8 @@ describe CrystalDeploy::SSH::RemoteScript, "traduction messages Marten" do
       mig_body = content[mig_start...mig_end]
       # Doit capturer la sortie dans un fichier temporaire
       mig_body.should contain("mktemp")
-      mig_body.should contain("_MIGRATE_RC=$?")
+      # Le code retour est capturé via && ... || pour résister à set -e
+      mig_body.should contain("_MIGRATE_RC=0 || _MIGRATE_RC=$?")
       # Doit vérifier le code de retour après sed
       mig_body.should contain("[ ${_MIGRATE_RC} -eq 0 ]")
     end
