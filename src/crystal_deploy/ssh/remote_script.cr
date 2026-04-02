@@ -830,15 +830,11 @@ module CrystalDeploy
         generate_wrapper() {
           _WRAPPER="${SHARED_DIR}/bin/${APP_FULL_NAME}"
           _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
-          _TMP_WRAPPER=$(mktemp /tmp/.wrapper.XXXXXX)
-          sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/bin"
-          printf '#!/bin/sh\n' > "${_TMP_WRAPPER}"
-          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_TMP_WRAPPER}"
-          printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_TMP_WRAPPER}"
-          sudo cp "${_TMP_WRAPPER}" "${_WRAPPER}"
-          sudo chmod 750 "${_WRAPPER}"
-          sudo chown "${APP_USER}:${APP_GROUP}" "${_WRAPPER}"
-          rm -f "${_TMP_WRAPPER}"
+          mkdir -p "${SHARED_DIR}/bin"
+          printf '#!/bin/sh\n' > "${_WRAPPER}"
+          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_WRAPPER}"
+          printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_WRAPPER}"
+          chmod 750 "${_WRAPPER}"
           log_info "Wrapper généré : ${_WRAPPER}"
         }
 
