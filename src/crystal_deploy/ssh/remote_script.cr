@@ -825,6 +825,19 @@ module CrystalDeploy
           log_info "Lien current → ${RELEASE_DIR}"
         }
 
+        # Génère le wrapper de démarrage à partir de env_exports.sh.
+        # Appelée au deploy AVANT start_service — ne dépend pas du rc.d precmd.
+        generate_wrapper() {
+          _WRAPPER="${SHARED_DIR}/bin/${APP_FULL_NAME}"
+          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
+          sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/bin"
+          printf '#!/bin/sh\n' > "${_WRAPPER}"
+          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_WRAPPER}"
+          printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_WRAPPER}"
+          chmod 750 "${_WRAPPER}"
+          log_info "Wrapper généré : ${_WRAPPER}"
+        }
+
         start_service() {
           log_section "Démarrage du service"
           # Nettoyer les pidfiles résiduels si le processus n'existe plus
@@ -961,6 +974,7 @@ module CrystalDeploy
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
             init_rcd
+            generate_wrapper
             start_service
             reload_nginx
             DEPLOY_END=$(date +%s)
@@ -1008,6 +1022,7 @@ module CrystalDeploy
             collect_assets
             activate_release
             init_rcd
+            generate_wrapper
             start_service
             reload_nginx
             cleanup_releases
