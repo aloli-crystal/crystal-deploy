@@ -85,7 +85,10 @@ module CrystalDeploy
         : ${#{rc_name}_user:="${APP_USER}"}
         : ${#{rc_name}_group:="${APP_GROUP}"}
         : ${#{rc_name}_dir:="${APP_HOME}/current"}
-        : ${#{rc_name}_env_file:="${APP_HOME}/shared/.env"}
+        # ATTENTION : ne PAS utiliser ${name}_env_file — rc.subr le source
+        # automatiquement avec `. $env_file` ce qui casse si les valeurs
+        # contiennent des caractères spéciaux (parenthèses, etc.)
+        : ${#{rc_name}_dotenv:="${APP_HOME}/shared/.env"}
         : ${#{rc_name}_log:="${APP_HOME}/shared/log/#{full_name}.log"}
         : ${#{rc_name}_pidfile:="/tmp/.#{full_name}.pid"}
         : ${#{rc_name}_socket:="#{socket_path}"}
@@ -231,7 +234,7 @@ module CrystalDeploy
 
         # Journalise le contenu du .env dans le fichier de log (mots de passe masqués)
         _log_env() {
-            ENV_FILE="${#{rc_name}_env_file}"
+            ENV_FILE="${#{rc_name}_dotenv}"
             LOG_FILE="${#{rc_name}_log}"
             if [ -f "${ENV_FILE}" ]; then
                 echo "--- .env chargé au démarrage ($(date)) ---" >> "${LOG_FILE}"
