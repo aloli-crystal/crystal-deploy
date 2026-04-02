@@ -852,11 +852,26 @@ module CrystalDeploy
 
         start_service() {
           log_section "Démarrage du service"
-          # Arrêter proprement si le service tourne encore (pidfile résiduel,
-          # daemon -r en boucle après un crash, etc.)
-          sudo service "${SERVICE_RC_NAME}" stop 2>/dev/null || true
-          sudo rm -f "/tmp/.${APP_FULL_NAME}.pid" "/tmp/.${APP_FULL_NAME}.child.pid"
-          sudo rm -f "${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
+          # Nettoyer les pidfiles résiduels si le processus n'existe plus
+          # (daemon -r en boucle de crash, arrêt brutal, etc.)
+          # graceful_stop a déjà été appelé dans activate_release pour l'arrêt propre.
+          _PID_PARENT="/tmp/.${APP_FULL_NAME}.pid"
+          if [ -f "${_PID_PARENT}" ]; then
+            _STALE_PID=$(cat "${_PID_PARENT}" 2>/dev/null | tr -d '[:space:]')
+            if [ -n "${_STALE_PID}" ] && ! kill -0 "${_STALE_PID}" 2>/dev/null; then
+              log_warn "Pidfile résiduel détecté (PID ${_STALE_PID} mort). Nettoyage."
+              sudo rm -f "${_PID_PARENT}" "/tmp/.${APP_FULL_NAME}.child.pid"
+              sudo rm -f "${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
+            elif [ -n "${_STALE_PID}" ] && kill -0 "${_STALE_PID}" 2>/dev/null; then
+              # Processus encore vivant (daemon -r en boucle de crash)
+              log_warn "Daemon encore actif (PID ${_STALE_PID}). Arrêt forcé."
+              sudo kill -TERM "${_STALE_PID}" 2>/dev/null || true
+              sleep 2
+              kill -0 "${_STALE_PID}" 2>/dev/null && sudo kill -KILL "${_STALE_PID}" 2>/dev/null || true
+              sudo rm -f "${_PID_PARENT}" "/tmp/.${APP_FULL_NAME}.child.pid"
+              sudo rm -f "${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
+            fi
+          fi
           sudo service "${SERVICE_RC_NAME}" start || true
           WAIT=0
           while [ "${WAIT}" -lt 10 ]; do
