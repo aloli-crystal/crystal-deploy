@@ -139,49 +139,24 @@ module CrystalDeploy
 
         # ---------------------------------------------------------------------------
         # run_with_env DIR CMD...
-        # Exécute CMD depuis DIR avec les variables du .env chargées.
-        # Le premier argument (USER) est conservé par compatibilité mais ignoré :
-        # le script s'exécute en tant que l'utilisateur connecté (APP_USER).
+        # Exécute CMD depuis DIR avec les variables d'environnement chargées.
+        # Le premier argument (USER) est conservé par compatibilité mais ignoré.
         #
-        # Stratégie : on génère un script wrapper /bin/sh temporaire qui exporte
-        # chaque variable du .env avec 'export KEY=VALUE' ligne par ligne.
-        # Cela évite l'erreur "Nom de variable incorrect" que FreeBSD /bin/sh lève
-        # avec 'set -a' (qui exporte aussi les variables héritées dont les noms
-        # commencent par '_' ou d'autres caractères non-alphabétiques).
+        # Les exports sont générés par Crystal (env_exports.sh) et copiés
+        # dans le wrapper — aucun parsing shell du .env.
         # ---------------------------------------------------------------------------
         run_with_env() {
           _RWE_DIR="$2"
           shift 2
           _RWE_CMD="$*"
-          # Créer un script wrapper temporaire qui :
-          #   1. Exporte chaque variable du .env avec 'export KEY="VALUE"'
-          #      Les valeurs sont protégées par des guillemets doubles pour gérer
-          #      les caractères spéciaux (parenthèses, espaces, etc.)
-          #      (evite set -a qui, sur FreeBSD /bin/sh, exporte aussi les variables
-          #      heritees dont les noms commencent par '_' ou d'autres caracteres
-          #      non-alphabetiques -> "Nom de variable incorrect")
-          #   2. Execute la commande dans le bon repertoire
           _RWE_WRAPPER=$(mktemp /tmp/.rwe_wrapper.XXXXXX)
+          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
           printf '#!/bin/sh\n' > "${_RWE_WRAPPER}"
           printf 'cd %s || exit 1\n' "${_RWE_DIR}" >> "${_RWE_WRAPPER}"
-          grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" \
-            | grep -v '^[[:space:]]*$' \
-            | while IFS= read -r _RWE_LINE; do
-                _RWE_KEY="${_RWE_LINE%%=*}"
-                _RWE_VAL="${_RWE_LINE#*=}"
-                # Retirer les guillemets englobants éventuels du .env
-                case "${_RWE_VAL}" in
-                  \"*\") _RWE_VAL="${_RWE_VAL#\"}"; _RWE_VAL="${_RWE_VAL%\"}" ;;
-                  \'*\') _RWE_VAL="${_RWE_VAL#\'}"; _RWE_VAL="${_RWE_VAL%\'}" ;;
-                esac
-                # Échapper les caractères spéciaux pour le double-quoting
-                _RWE_VAL_ESC=$(printf '%s' "${_RWE_VAL}" | sed 's/[\\"`$]/\\&/g')
-                printf 'export %s="%s"\n' "${_RWE_KEY}" "${_RWE_VAL_ESC}" >> "${_RWE_WRAPPER}"
-              done
+          # Copier les exports pré-générés par Crystal (pas de parsing shell)
+          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_RWE_WRAPPER}"
           printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
           chmod 755 "${_RWE_WRAPPER}"
-          # Exécution directe : l'utilisateur connecté (APP_USER) est celui qui
-          # exécute le script distant — pas besoin de sudo su.
           /bin/sh "${_RWE_WRAPPER}"
           _RWE_STATUS=$?
           rm -f "${_RWE_WRAPPER}"

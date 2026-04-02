@@ -45,6 +45,18 @@ module CrystalDeploy
         end
       end
 
+      # Lit le contenu d'un fichier distant. Retourne nil si le fichier n'existe pas.
+      def read_remote(path : String) : String?
+        output = IO::Memory.new
+        result = Process.run(
+          "ssh",
+          ["-o", "BatchMode=yes", "#{@user}@#{@host}", "cat #{path}"],
+          output: output,
+          error: Process::Redirect::Close
+        )
+        result.success? ? output.to_s : nil
+      end
+
       # Exécute une commande sur le serveur distant (TTY alloué pour l'interactivité)
       # ServerAliveInterval=30 évite le timeout SSH pendant la compilation Crystal
       def exec_remote(command : String) : Int32

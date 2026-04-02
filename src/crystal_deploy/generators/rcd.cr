@@ -6,7 +6,7 @@ module CrystalDeploy
     #
     # Architecture de démarrage :
     #   daemon(8) -o LOG_FILE → wrapper shell (shared/bin/<full-name>)
-    #                              ↳ charge shared/.env (export KEY="VALUE" par ligne)
+    #                              ↳ charge shared/env_exports.sh (généré par Crystal)
     #                              ↳ exec binaire Crystal
     #
     # daemon(8) gère la redirection vers LOG_FILE (ouvert en tant que root
@@ -121,36 +121,16 @@ module CrystalDeploy
 
         # Génère shared/bin/#{full_name} :
         # script shell nommé comme l'application pour apparaître clairement dans ps.
-        # Il charge le .env (export KEY="VALUE" ligne par ligne pour gérer les
-        # caractères spéciaux comme les parenthèses dans les mots de passe),
-        # puis lance le binaire.
+        # Les exports sont générés par Crystal dans env_exports.sh au moment du deploy.
+        # Aucun parsing shell du .env — les caractères spéciaux sont gérés par Crystal.
         _generate_wrapper() {
-            ENV_FILE="${#{rc_name}_env_file}"
-            LOG_FILE="${#{rc_name}_log}"
-            APP_SOCKET="${#{rc_name}_socket}"
             WRAPPER="${#{rc_name}_wrapper}"
-            # Début du wrapper
+            ENV_EXPORTS="${APP_HOME}/shared/env_exports.sh"
             printf '#!/bin/sh\\n' > "${WRAPPER}"
             printf '# Wrapper de démarrage — #{full_name}\\n' >> "${WRAPPER}"
             printf '# Généré automatiquement par rc.d — ne pas modifier manuellement.\\n' >> "${WRAPPER}"
-            # Exporter chaque variable du .env avec des guillemets doubles
-            # pour protéger les caractères spéciaux (parenthèses, espaces, etc.)
-            if [ -f "${ENV_FILE}" ]; then
-                grep -v '^[[:space:]]*#' "${ENV_FILE}" \\
-                    | grep -v '^[[:space:]]*$' \\
-                    | while IFS= read -r _LINE; do
-                        _KEY="${_LINE%%=*}"
-                        _VAL="${_LINE#*=}"
-                        # Retirer les guillemets englobants éventuels
-                        case "${_VAL}" in
-                            \\"*\\") _VAL="${_VAL#\\"}"; _VAL="${_VAL%\\"}" ;;
-                            \\'*\\') _VAL="${_VAL#\\'}"; _VAL="${_VAL%\\'}" ;;
-                        esac
-                        # Échapper les caractères spéciaux pour le double-quoting
-                        _VAL_ESC=$(printf '%s' "${_VAL}" | sed 's/[\\\\"`$]/\\\\&/g')
-                        printf 'export %s="%s"\\n' "${_KEY}" "${_VAL_ESC}" >> "${WRAPPER}"
-                    done
-            fi
+            # Copier les exports pré-générés par Crystal (pas de parsing shell)
+            [ -f "${ENV_EXPORTS}" ] && cat "${ENV_EXPORTS}" >> "${WRAPPER}"
             printf 'exec %s\\n' "'${APP_BIN}'" >> "${WRAPPER}"
             chmod 750 "${WRAPPER}"
             chown "${#{rc_name}_user}:${#{rc_name}_group}" "${WRAPPER}"

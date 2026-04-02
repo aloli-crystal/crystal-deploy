@@ -70,9 +70,8 @@ describe CrystalDeploy::Generators::Rcd do
     content = gen.generate
     # La fonction _generate_wrapper doit être présente
     content.should contain("_generate_wrapper")
-    # Le wrapper doit charger le .env ligne par ligne avec export KEY="VALUE"
-    # (pas de set -a / . .env qui casse avec des caractères spéciaux)
-    content.should contain("export %s=\"%s\"")
+    # Le wrapper copie env_exports.sh pré-généré par Crystal
+    content.should contain("env_exports.sh")
     content.should_not contain("set -a")
     # daemon(8) doit lancer le wrapper, pas le binaire directement
     content.should contain("mon_app__developpement_wrapper")

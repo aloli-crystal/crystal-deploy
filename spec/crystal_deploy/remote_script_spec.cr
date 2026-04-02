@@ -10,17 +10,17 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
   # les variables héritées dont les noms commencent par '_' ou d'autres caractères
   # non-alphabétiques, ce qui lève "Nom de variable incorrect".
   # Correction : script wrapper avec 'export KEY=VALUE' exécuté directement.
-  it "run_with_env utilise un script wrapper avec export (pas set -a ni sudo su)" do
+  it "run_with_env utilise env_exports.sh pré-généré par Crystal (pas de parsing shell)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     # Utilise un script wrapper exécuté directement par /bin/sh
     content.should contain("_RWE_WRAPPER")
-    content.should contain("export %s=\"%s\"")
-    # run_with_env exécute le wrapper directement (pas de sudo su)
-    content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
+    # Copie env_exports.sh dans le wrapper (pas de parsing shell du .env)
+    content.should contain("env_exports.sh")
+    content.should contain("cat \"${_ENV_EXPORTS}\"")
+    # Ne doit PAS parser le .env en shell
     content.should_not contain("sudo su \"${_RWE_USER}\"")
-    # Ne doit PAS utiliser set -a dans le code shell (hors commentaires)
     code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
     code_lines.join("\n").should_not contain("set -a")
   end
@@ -33,14 +33,20 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("chmod 755")
   end
 
-  # Les commentaires et lignes vides du .env doivent etre filtres
-  # pour ne pas generer des lignes 'export # commentaire' dans le wrapper.
-  it "run_with_env filtre les commentaires et lignes vides du .env" do
+  # Le filtrage des commentaires/lignes vides est fait par Crystal (EnvParser),
+  # plus par le shell. run_with_env utilise env_exports.sh pré-généré.
+  it "run_with_env utilise env_exports.sh sans parser le .env en shell" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
-    content.should contain("grep -v '^[[:space:]]*#'")
-    content.should contain("grep -v '^[[:space:]]*$'")
+    content.should contain("env_exports.sh")
+    # Ne doit plus parser le .env en shell dans run_with_env
+    rwe_start = content.index("run_with_env() {")
+    rwe_end = content.index("init_user() {") || content.index("create_database() {")
+    if rwe_start && rwe_end
+      rwe_body = content[rwe_start...rwe_end]
+      rwe_body.should_not contain("grep -v")
+    end
   end
 
   # Régression : run_migrations utilisait ./bin/${APP_FULL_NAME} migrate.
@@ -227,7 +233,7 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
       decoded.should contain(". /etc/rc.subr")
       decoded.should contain("run_rc_command")
       decoded.should contain("_generate_wrapper")
-      decoded.should contain("export %s=\"%s\"")
+      decoded.should contain("env_exports.sh")
     end
   end
 
