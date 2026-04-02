@@ -852,6 +852,11 @@ module CrystalDeploy
 
         start_service() {
           log_section "Démarrage du service"
+          # Arrêter proprement si le service tourne encore (pidfile résiduel,
+          # daemon -r en boucle après un crash, etc.)
+          sudo service "${SERVICE_RC_NAME}" stop 2>/dev/null || true
+          sudo rm -f "/tmp/.${APP_FULL_NAME}.pid" "/tmp/.${APP_FULL_NAME}.child.pid"
+          sudo rm -f "${UNIX_SOCKET:-/tmp/.${APP_FULL_NAME}.sock}"
           sudo service "${SERVICE_RC_NAME}" start || true
           WAIT=0
           while [ "${WAIT}" -lt 10 ]; do
