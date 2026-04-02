@@ -16,7 +16,7 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
     # Utilise un script wrapper exécuté directement par /bin/sh
     content.should contain("_RWE_WRAPPER")
-    content.should contain("export %s")
+    content.should contain("export %s=\"%s\"")
     # run_with_env exécute le wrapper directement (pas de sudo su)
     content.should contain("/bin/sh \"${_RWE_WRAPPER}\"")
     content.should_not contain("sudo su \"${_RWE_USER}\"")

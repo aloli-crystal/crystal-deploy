@@ -154,7 +154,9 @@ module CrystalDeploy
           shift 2
           _RWE_CMD="$*"
           # Créer un script wrapper temporaire qui :
-          #   1. Exporte chaque variable du .env avec 'export KEY=VALUE'
+          #   1. Exporte chaque variable du .env avec 'export KEY="VALUE"'
+          #      Les valeurs sont protégées par des guillemets doubles pour gérer
+          #      les caractères spéciaux (parenthèses, espaces, etc.)
           #      (evite set -a qui, sur FreeBSD /bin/sh, exporte aussi les variables
           #      heritees dont les noms commencent par '_' ou d'autres caracteres
           #      non-alphabetiques -> "Nom de variable incorrect")
@@ -165,7 +167,16 @@ module CrystalDeploy
           grep -v '^[[:space:]]*#' "${SHARED_DIR}/.env" \
             | grep -v '^[[:space:]]*$' \
             | while IFS= read -r _RWE_LINE; do
-                printf 'export %s\n' "${_RWE_LINE}" >> "${_RWE_WRAPPER}"
+                _RWE_KEY="${_RWE_LINE%%=*}"
+                _RWE_VAL="${_RWE_LINE#*=}"
+                # Retirer les guillemets englobants éventuels du .env
+                case "${_RWE_VAL}" in
+                  \"*\") _RWE_VAL="${_RWE_VAL#\"}"; _RWE_VAL="${_RWE_VAL%\"}" ;;
+                  \'*\') _RWE_VAL="${_RWE_VAL#\'}"; _RWE_VAL="${_RWE_VAL%\'}" ;;
+                esac
+                # Échapper les caractères spéciaux pour le double-quoting
+                _RWE_VAL_ESC=$(printf '%s' "${_RWE_VAL}" | sed 's/[\\"`$]/\\&/g')
+                printf 'export %s="%s"\n' "${_RWE_KEY}" "${_RWE_VAL_ESC}" >> "${_RWE_WRAPPER}"
               done
           printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
           chmod 755 "${_RWE_WRAPPER}"
