@@ -227,7 +227,7 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
       decoded.should contain(". /etc/rc.subr")
       decoded.should contain("run_rc_command")
       decoded.should contain("_generate_wrapper")
-      decoded.should contain("set -a")
+      decoded.should contain("export %s=\"%s\"")
     end
   end
 

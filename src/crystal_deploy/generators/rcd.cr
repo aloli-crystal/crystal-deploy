@@ -6,7 +6,7 @@ module CrystalDeploy
     #
     # Architecture de démarrage :
     #   daemon(8) -o LOG_FILE → wrapper shell (shared/bin/<full-name>)
-    #                              ↳ charge shared/.env (set -a / set +a)
+    #                              ↳ charge shared/.env (export KEY="VALUE" par ligne)
     #                              ↳ exec binaire Crystal
     #
     # daemon(8) gère la redirection vers LOG_FILE (ouvert en tant que root
@@ -76,7 +76,7 @@ module CrystalDeploy
         rcvar="${name}_enable"
 
         APP_HOME="#{app_home}"
-        APP_USER="deploy"
+        APP_USER="$(whoami)"
         APP_GROUP="www"
         APP_BIN="${APP_HOME}/current/bin/#{full_name}"
 
@@ -121,22 +121,37 @@ module CrystalDeploy
 
         # Génère shared/bin/#{full_name} :
         # script shell nommé comme l'application pour apparaître clairement dans ps.
-        # Il charge le .env, exporte les variables nécessaires, lance le binaire
-        # et horodate chaque ligne de log via awk.
+        # Il charge le .env (export KEY="VALUE" ligne par ligne pour gérer les
+        # caractères spéciaux comme les parenthèses dans les mots de passe),
+        # puis lance le binaire.
         _generate_wrapper() {
             ENV_FILE="${#{rc_name}_env_file}"
             LOG_FILE="${#{rc_name}_log}"
             APP_SOCKET="${#{rc_name}_socket}"
             WRAPPER="${#{rc_name}_wrapper}"
-            cat > "${WRAPPER}" << WRAPPER_EOF
-        #!/bin/sh
-        # Wrapper de démarrage — #{full_name}
-        # Généré automatiquement par rc.d — ne pas modifier manuellement.
-        set -a
-        . '${ENV_FILE}'
-        set +a
-        exec '${APP_BIN}'
-        WRAPPER_EOF
+            # Début du wrapper
+            printf '#!/bin/sh\\n' > "${WRAPPER}"
+            printf '# Wrapper de démarrage — #{full_name}\\n' >> "${WRAPPER}"
+            printf '# Généré automatiquement par rc.d — ne pas modifier manuellement.\\n' >> "${WRAPPER}"
+            # Exporter chaque variable du .env avec des guillemets doubles
+            # pour protéger les caractères spéciaux (parenthèses, espaces, etc.)
+            if [ -f "${ENV_FILE}" ]; then
+                grep -v '^[[:space:]]*#' "${ENV_FILE}" \\
+                    | grep -v '^[[:space:]]*$' \\
+                    | while IFS= read -r _LINE; do
+                        _KEY="${_LINE%%=*}"
+                        _VAL="${_LINE#*=}"
+                        # Retirer les guillemets englobants éventuels
+                        case "${_VAL}" in
+                            \\"*\\") _VAL="${_VAL#\\"}"; _VAL="${_VAL%\\"}" ;;
+                            \\'*\\') _VAL="${_VAL#\\'}"; _VAL="${_VAL%\\'}" ;;
+                        esac
+                        # Échapper les caractères spéciaux pour le double-quoting
+                        _VAL_ESC=$(printf '%s' "${_VAL}" | sed 's/[\\\\"`$]/\\\\&/g')
+                        printf 'export %s="%s"\\n' "${_KEY}" "${_VAL_ESC}" >> "${WRAPPER}"
+                    done
+            fi
+            printf 'exec %s\\n' "'${APP_BIN}'" >> "${WRAPPER}"
             chmod 750 "${WRAPPER}"
             chown "${#{rc_name}_user}:${#{rc_name}_group}" "${WRAPPER}"
         }
