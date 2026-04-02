@@ -184,6 +184,7 @@ module CrystalDeploy
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/log"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/db"
+          sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${SHARED_DIR}/bin"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 755 "${SHARED_DIR}/public"
           log_info "Répertoires créés."
         }
