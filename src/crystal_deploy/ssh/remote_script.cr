@@ -826,16 +826,50 @@ module CrystalDeploy
           log_info "Lien current → ${RELEASE_DIR}"
         }
 
+        # Génère env_exports.sh à partir du .env.
+        # Chaque ligne CLÉ=valeur est convertie en export CLÉ='valeur'.
+        # Appelée au deploy AVANT generate_wrapper.
+        generate_env_exports() {
+          _ENV_FILE="${SHARED_DIR}/.env"
+          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
+          if [ ! -f "${_ENV_FILE}" ]; then
+            log_warn "Pas de .env — env_exports.sh non généré."
+            return 0
+          fi
+          : > "${_ENV_EXPORTS}"
+          while IFS= read -r _line || [ -n "${_line}" ]; do
+            case "${_line}" in
+              ""|\#*) continue ;;
+            esac
+            _key="${_line%%=*}"
+            _val="${_line#*=}"
+            case "${_val}" in
+              \"*\") _val="${_val%\"}"; _val="${_val#\"}" ;;
+              \'*\') _val="${_val%\'}"; _val="${_val#\'}" ;;
+            esac
+            printf "export %s='%s'\n" "${_key}" "${_val}" >> "${_ENV_EXPORTS}"
+          done < "${_ENV_FILE}"
+          sudo chmod 640 "${_ENV_EXPORTS}"
+          sudo chown "${APP_USER}:${APP_GROUP}" "${_ENV_EXPORTS}"
+          log_info "env_exports.sh généré ($(wc -l < "${_ENV_EXPORTS}") variables)."
+        }
+
         # Génère le wrapper de démarrage à partir de env_exports.sh.
         # Appelée au deploy AVANT start_service — ne dépend pas du rc.d precmd.
         generate_wrapper() {
           _WRAPPER="${SHARED_DIR}/bin/${APP_FULL_NAME}"
           _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
-          mkdir -p "${SHARED_DIR}/bin"
-          printf '#!/bin/sh\n' > "${_WRAPPER}"
-          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_WRAPPER}"
-          printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_WRAPPER}"
-          chmod 750 "${_WRAPPER}"
+          sudo mkdir -p "${SHARED_DIR}/bin"
+          _TMP=$(mktemp /tmp/.wrapper.XXXXXX)
+          printf '#!/bin/sh\n' > "${_TMP}"
+          printf '# Wrapper — %s (généré automatiquement)\n' "${APP_FULL_NAME}" >> "${_TMP}"
+          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_TMP}"
+          printf 'cd %s || exit 1\n' "'${CURRENT_LINK}'" >> "${_TMP}"
+          printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_TMP}"
+          sudo cp "${_TMP}" "${_WRAPPER}"
+          sudo chmod 750 "${_WRAPPER}"
+          sudo chown "${APP_USER}:${APP_GROUP}" "${_WRAPPER}"
+          rm -f "${_TMP}"
           log_info "Wrapper généré : ${_WRAPPER}"
         }
 
@@ -975,6 +1009,7 @@ module CrystalDeploy
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
             init_rcd
+            generate_env_exports
             generate_wrapper
             start_service
             reload_nginx
@@ -1023,6 +1058,7 @@ module CrystalDeploy
             collect_assets
             activate_release
             init_rcd
+            generate_env_exports
             generate_wrapper
             start_service
             reload_nginx
