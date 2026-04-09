@@ -860,6 +860,7 @@ module CrystalDeploy
           _WRAPPER="${SHARED_DIR}/bin/${APP_FULL_NAME}"
           _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
           sudo mkdir -p "${SHARED_DIR}/bin"
+          sudo chown "${APP_USER}:${APP_GROUP}" "${SHARED_DIR}/bin"
           _TMP=$(mktemp /tmp/.wrapper.XXXXXX)
           printf '#!/bin/sh\n' > "${_TMP}"
           printf '# Wrapper — %s (généré automatiquement)\n' "${APP_FULL_NAME}" >> "${_TMP}"
