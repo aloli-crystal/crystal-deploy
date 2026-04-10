@@ -927,7 +927,7 @@ module CrystalDeploy
             if [ "${FRAMEWORK}" = "marten" ] && [ -f "${CURRENT_LINK}/bin/marten" ]; then
               # Marten : utiliser la commande CLI intégrée
               run_with_env "${APP_USER}" "${CURRENT_LINK}" \
-                "APP_HOME=${APP_HOME} APP_FULL_NAME=${APP_FULL_NAME} ./bin/marten install_cron"
+                "export APP_HOME=${APP_HOME} && export APP_FULL_NAME=${APP_FULL_NAME} && ./bin/marten install_cron"
             else
               # Fallback : substitution directe via sed
               CRON_TMP=$(mktemp)
