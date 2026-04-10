@@ -19,6 +19,7 @@ module CrystalDeploy
                       --dev     → premier environnement dont le nom commence par "dev"
                       --prep    → premier environnement dont le nom commence par "prep"
                       --prod    → premier environnement dont le nom commence par "prod"
+                    Sans --<env>, l'environnement est déduit de la branche git courante.
 
       Configuration :
         config/deploy.yml doit définir :
@@ -66,10 +67,15 @@ module CrystalDeploy
       end
 
       # Résolution de l'environnement
-      env_arg  = args.find { |arg| arg.starts_with?("--") } || "--preproduction"
-      env_name = env_arg.lstrip('-')
+      env_arg  = args.find { |arg| arg.starts_with?("--") }
       config   = Config.load
-      env      = resolve_environment(config, env_name)
+
+      env_name = if env_arg
+                   env_arg.lstrip('-')
+                 else
+                   resolve_env_from_branch(config)
+                 end
+      env = resolve_environment(config, env_name)
 
       # Commande dns-setup : configure les clés du registrar DNS
       if args.first == "dns-setup"
@@ -121,6 +127,26 @@ module CrystalDeploy
         Dir.mkdir_p("config")
         File.write(dest, DEPLOY_YML_EXAMPLE)
         puts "\n[OK] #{dest} généré — adaptez-le à votre projet puis relancez :\n     bin/deploy init --<env>".colorize(:green)
+      end
+    end
+
+    # Détecte la branche git courante et cherche l'environnement correspondant.
+    private def resolve_env_from_branch(config : Config) : String
+      branch = `git rev-parse --abbrev-ref HEAD 2>/dev/null`.strip
+      if branch.empty?
+        STDERR.puts "Impossible de détecter la branche git courante.".colorize(:red)
+        STDERR.puts "Spécifiez l'environnement avec --<env>.".colorize(:yellow)
+        exit 1
+      end
+
+      match = config.environments.find { |_, env| env.branch == branch }
+      if match
+        log_info "Branche #{branch.colorize(:white)} → environnement #{match[0].colorize(:white)}"
+        match[0]
+      else
+        STDERR.puts "Aucun environnement ne correspond à la branche '#{branch}'.".colorize(:red)
+        STDERR.puts "Branches configurées : #{config.environments.map { |k, v| "#{k} (#{v.branch})" }.join(", ")}".colorize(:yellow)
+        exit 1
       end
     end
 
