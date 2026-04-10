@@ -924,15 +924,21 @@ module CrystalDeploy
           CRON_SRC="${CURRENT_LINK}/config/cron/crontab"
           if [ -f "${CRON_SRC}" ]; then
             log_section "Installation du crontab"
-            # Remplacer les variables de template
-            CRON_TMP=$(mktemp)
-            sed -e "s|{{APP_HOME}}|${APP_HOME}|g" \
-                -e "s|{{APP_FULL_NAME}}|${APP_FULL_NAME}|g" \
-                -e "s|{{MARTEN_ENV}}|${ENV_NAME}|g" \
-                "${CRON_SRC}" > "${CRON_TMP}"
-            crontab "${CRON_TMP}"
-            rm -f "${CRON_TMP}"
-            log_info "Crontab installé pour $(whoami)."
+            if [ "${FRAMEWORK}" = "marten" ] && [ -f "${CURRENT_LINK}/bin/marten" ]; then
+              # Marten : utiliser la commande CLI intégrée
+              run_with_env "${APP_USER}" "${CURRENT_LINK}" \
+                "APP_HOME=${APP_HOME} APP_FULL_NAME=${APP_FULL_NAME} ./bin/marten install_cron"
+            else
+              # Fallback : substitution directe via sed
+              CRON_TMP=$(mktemp)
+              sed -e "s|{{APP_HOME}}|${APP_HOME}|g" \
+                  -e "s|{{APP_FULL_NAME}}|${APP_FULL_NAME}|g" \
+                  -e "s|{{MARTEN_ENV}}|${ENV_NAME}|g" \
+                  "${CRON_SRC}" > "${CRON_TMP}"
+              crontab "${CRON_TMP}"
+              rm -f "${CRON_TMP}"
+              log_info "Crontab installé pour $(whoami)."
+            fi
           fi
         }
 
