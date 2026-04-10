@@ -5,7 +5,7 @@
 :source-highlighter: rouge
 :icons: font
 
-Shard Crystal pour le déploiement d'applications https://kemalcr.com[Kemal] et https://martenframework.com[Marten] sur serveurs FreeBSD.
+Shard Crystal pour le déploiement d'applications https://martenframework.com[Marten] et https://kemalcr.com[Kemal] sur serveurs FreeBSD.
 Style Capistrano : `releases/`, `current/`, `shared/`.
 Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 
@@ -18,12 +18,15 @@ Génère dynamiquement les scripts `rc.d` et `nginx.conf`.
 * Génération dynamique du `nginx.conf` (mode pkg FreeBSD ou Passenger dans `/opt`) avec **pages d'erreur personnalisées** (502/503/504)
 * Dialogue interactif pour construire le `.env` lors de l'initialisation
 * Création automatique de l'utilisateur PostgreSQL et de la base de données
-* Création du CNAME OVH via l'API REST (clés lues depuis le `.env`)
+* Création du CNAME OVH ou Gandi via l'API REST (clés lues depuis le `.env`)
 * Rollback en une commande (avec ré-application des migrations Marten)
 * Conservation des N dernières releases (configurable)
 * Compilation Crystal dans une session `tmux` (résistante aux coupures SSH)
 * Génération automatique du workflow GitHub Actions (CI/CD) via `generate-ci`
 * **Arrêt gracieux** (zero-downtime) : SIGTERM + attente de fin des requêtes avant bascule
+* **Détection automatique de l'environnement** depuis la branche git courante
+* **Crontab automatique** : installation idempotente depuis `config/cron/crontab`
+* **Déploiement parallélisé** : migrations, assets et crontab s'exécutent pendant la compilation
 
 == Installation
 
@@ -33,8 +36,12 @@ Ajoutez le shard dans votre `shard.yml` :
 ----
 dependencies:
   crystal-deploy:
-    github: votre-org/crystal-deploy
-    branch: developpement
+    github: aloli-crystal/crystal-deploy
+    branch: main
+
+targets:
+  deploy:
+    main: lib/crystal-deploy/src/deploy.cr
 ----
 
 Puis compilez le binaire `deploy` :
@@ -42,10 +49,8 @@ Puis compilez le binaire `deploy` :
 [source,sh]
 ----
 shards install
-crystal build lib/crystal-deploy/src/deploy.cr --release -o bin/deploy
+shards build deploy
 ----
-
-Ajoutez `bin/deploy` à votre `.gitignore` si vous ne souhaitez pas versionner le binaire.
 
 NOTE: Le binaire `deploy` doit être compilé dans votre projet (pas dans le shard). Il lit `config/deploy.yml` depuis le répertoire courant.
 
@@ -55,7 +60,7 @@ Copiez le fichier d'exemple dans votre projet :
 
 [source,sh]
 ----
-cp lib/crystal-deploy/config/deploy.yml config/deploy.yml
+cp lib/crystal-deploy/examples/marten/config/deploy.yml config/deploy.yml
 ----
 
 Puis adaptez `config/deploy.yml` :
@@ -66,75 +71,81 @@ app_name: mon-app                              # <1>
 repo_url: git@github.com:user/mon-app.git
 crystal_main: src/server.cr
 keep_releases: 10
-
-# Framework Crystal utilisé : marten | kemal (défaut : kemal)
-# Adapte : variables .env, chemins assets NGINX, migrations, workflow CI
 framework: marten                              # <2>
+database: postgresql                           # <3>
+
+dns:                                           # <4>
+  registrar: ovh
+  zone: example.app
+
+env_vars:
+  required:
+    - key: SECRET_KEY
+      secret: true
+      generate: hex64
 
 environments:
-  preproduction:
-    branch: developpement
-    host: deploy.example.com
+  staging:
+    branch: staging
+    host: staging.example.com
     user: deploy
-    app_url: https://preprod.mon-app.example.app
-    dns_subdomain: preprod.mon-app             # <3>
-    dns_target: deploy.example.com.
+    app_url: https://staging.mon-app.example.app
+    dns_subdomain: staging.mon-app             # <5>
+    dns_target: staging.example.com.
 
   production:
     branch: production
     host: prod.example.com
     user: deploy
     app_url: https://mon-app.example.app
-
-# Variables du fichier .env côté serveur
-# Marten :
-env_vars:
-  - key: SECRET_KEY
-    label: "Clé secrète Marten"
-    generate: hex32
-  - key: MARTEN_ALLOWED_HOSTS
-    label: "MARTEN_ALLOWED_HOSTS"
-    default_from: app_url
-  - key: MARTEN_SOCKET
-    label: "MARTEN_SOCKET"
-    default_from: socket_path
-  - key: DB_HOST
-    label: "DB_HOST"
-  - key: DB_PORT
-    label: "DB_PORT"
-  - key: DB_USER
-    label: "DB_USER"
-  - key: DB_PASSWORD
-    label: "DB_PASSWORD"
-  - key: DB_NAME
-    label: "DB_NAME"
-
-# Kemal (exemple alternatif) :
-# env_vars:
-#   - key: SESSION_SECRET
-#     label: "SESSION_SECRET"
-#     generate: hex32
-#   - key: APP_URL
-#     label: "APP_URL"
-#     default_from: app_url
-#   - key: DATABASE_URL
-#     label: "DATABASE_URL"
-#     build_from_pg: true
-#   - key: UNIX_SOCKET
-#     label: "UNIX_SOCKET"
-#     default_from: socket_path
-
-dns:
-  registrar: ovh
-  zone: example.app
 ----
-<1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--preproduction`
+<1> Utilisé pour nommer les répertoires, services et binaires : `mon-app--staging`
 <2> Valeurs acceptées : `marten` ou `kemal`. Adapte NGINX, migrations, CI et variables `.env`
-<3> Optionnel — nécessite les clés API OVH dans votre `.env` local (voir section <<dns-ovh>>)
+<3> Adaptateur de base de données : `postgresql`, `mariadb`, `sqlite` ou `none`
+<4> Registrar DNS (optionnel) : `ovh` ou `gandi`
+<5> Optionnel — nécessite les clés API du registrar dans votre `.env` local
+
+== Commandes
+
+[source,sh]
+----
+bin/deploy init --staging       # Initialisation du serveur (une seule fois)
+bin/deploy deploy --staging     # Déploiement d'une nouvelle release
+bin/deploy deploy --production  # Déploiement en production
+bin/deploy rollback --staging   # Retour à la release précédente
+bin/deploy status --staging     # Version active et releases disponibles
+bin/deploy generate-ci          # Générer le workflow GitHub Actions
+bin/deploy dns-setup --staging  # Configurer les clés DNS (OVH / Gandi)
+----
+
+=== Détection automatique de l'environnement
+
+Sans `--<env>`, la branche git courante est utilisée pour déduire l'environnement :
+
+[source,sh]
+----
+git checkout staging
+bin/deploy deploy               # → déploie staging automatiquement
+
+git checkout production
+bin/deploy deploy               # → déploie production automatiquement
+----
+
+La correspondance se fait via le champ `branch` de chaque environnement dans `config/deploy.yml`.
+
+=== Raccourcis par préfixe
+
+Les noms d'environnement peuvent être abrégés :
+
+[source,sh]
+----
+bin/deploy deploy --stag        # → staging
+bin/deploy deploy --prod        # → production
+----
 
 == Support Marten vs Kemal
 
-Le champ `framework` dans `config/deploy.yml` adapte automatiquement le comportement du shard :
+Le champ `framework` dans `config/deploy.yml` adapte automatiquement le comportement :
 
 [cols="2,3,3"]
 |===
@@ -150,73 +161,103 @@ Le champ `framework` dans `config/deploy.yml` adapte automatiquement le comporte
 
 | Migrations
 | `db/schema_pg.sql` à l'init
-| `marten migrate` avant chaque activation
+| `bin/marten migrate` avant chaque activation
 
 | Rollback migrations
 | Non applicable
-| `marten migrate` sur la release précédente
+| `bin/marten migrate` sur la release précédente
 
 | Tests CI
 | `DATABASE_URL` + `schema_pg.sql`
 | `DB_*` + `MARTEN_ENV=test` + `marten migrate`
 
 | Seed
-| `./bin/<app> seed`
-| `./bin/<app> seed` (si commande présente)
+| —
+| `bin/marten seed` (si commande présente)
+
+| Crontab
+| Substitution `sed` + `crontab(1)`
+| `bin/marten install_cron` (idempotent)
 |===
 
-== Utilisation
+== Flow de déploiement
 
-=== Génération du workflow GitHub Actions
+Le déploiement est optimisé pour minimiser le temps d'indisponibilité.
+Les étapes qui utilisent `bin/marten` s'exécutent en parallèle avec la compilation du binaire applicatif :
 
-[source,sh]
+[source]
 ----
-bin/deploy generate-ci
-----
-
-Cette commande génère `.github/workflows/deploy.yml`, un workflow complet qui :
-
-. Lance les tests sur chaque push (adapté au framework)
-. Déploie automatiquement sur pré-production à chaque push sur la branche `developpement`
-. Déploie automatiquement sur production à chaque push sur la branche `production`
-
-=== Initialisation du serveur (une seule fois)
-
-[source,sh]
-----
-bin/deploy init --preproduction
-bin/deploy init --production
-----
-
-Cette commande :
-
-. Vérifie la connexion SSH
-. Propose un dialogue pour configurer le DNS OVH (optionnel, clés lues depuis `.env`)
-. Construit le fichier `.env` de façon interactive
-. Sur le serveur : crée l'utilisateur `deploy`, les répertoires, le `.env`, le `nginx.conf`
-
-=== Déploiement
-
-[source,sh]
-----
-bin/deploy deploy --preproduction
-bin/deploy deploy --production
+clone_repo
+link_shared
+shards_prepare              ← bin/marten disponible (~15s)
+compile_start               ← crystal build --release en arrière-plan (~200s)
+  ├── run_migrations        ┐
+  ├── run_seed              │ en parallèle avec la compilation
+  ├── collect_assets        │
+  └── install_crontab       ┘
+compile_wait                ← synchronisation
+activate_release            ← ln -sf → zero downtime
+init_rcd
+generate_env_exports
+generate_wrapper
+start_service
+reload_nginx
+cleanup_releases
 ----
 
-Chaque déploiement :
+== Crontab automatique
 
-. Clone la branche dans `releases/<timestamp>/`
-. Lie `shared/.env` et `shared/log/`
-. Compile le binaire Crystal en mode `--release` (dans `tmux` si disponible)
-. **Marten uniquement** : applique les migrations (`marten migrate`)
-. **Arrêt gracieux** de l'ancienne version (SIGTERM + attente de fin des requêtes)
-. Bascule le lien `current` vers la nouvelle release
-. Installe/met à jour le script `rc.d`
-. Démarre la nouvelle version
-. Recharge NGINX
-. Supprime les anciennes releases (au-delà de `keep_releases`)
+Si le projet contient `config/cron/crontab`, il est installé automatiquement lors du déploiement.
 
-=== Arrêt gracieux (zero-downtime)
+=== Variables disponibles dans le template
+
+[cols="1,2,2"]
+|===
+| Variable | Description | Exemple
+
+| `{{APP_HOME}}`
+| Répertoire home de l'application
+| `/home/mon-app--staging`
+
+| `{{APP_FULL_NAME}}`
+| Nom complet app--env
+| `mon-app--staging`
+
+| `{{MARTEN_ENV}}`
+| Environnement Marten
+| `staging`
+|===
+
+=== Exemple `config/cron/crontab`
+
+[source]
+----
+# Récap quotidien à 7h
+0 7 * * * cd {{APP_HOME}}/current && MARTEN_ENV={{MARTEN_ENV}} ./bin/{{APP_FULL_NAME}} recap_quotidien >> {{APP_HOME}}/shared/log/cron.log 2>&1
+----
+
+=== Idempotence
+
+Pour les projets Marten, la commande `bin/marten install_cron` est utilisée.
+Elle compare le crontab actuel avec le nouveau contenu et ne réinstalle que si différent.
+Si le fichier `config/cron/crontab` n'existe pas, un message informatif est affiché et le déploiement continue.
+
+=== Commande CLI Marten
+
+Ajouter dans votre projet :
+
+[source,crystal]
+----
+class InstallCron < Marten::CLI::Command
+  command_name :install_cron
+  help "Installe le crontab depuis config/cron/crontab."
+  # ...
+end
+----
+
+crystal-deploy appelle cette commande avec les variables d'environnement `APP_HOME`, `APP_FULL_NAME` et `MARTEN_ENV`.
+
+== Arrêt gracieux (zero-downtime)
 
 Lors de chaque déploiement, le script envoie `SIGTERM` au processus en cours et attend
 qu'il se termine proprement avant de basculer vers la nouvelle release.
@@ -224,8 +265,6 @@ Les requêtes HTTP en cours ne sont pas interrompues.
 
 Le timeout d'attente est configurable via la variable d'environnement `GRACEFUL_TIMEOUT`
 (défaut : 30 secondes). Au-delà, un `SIGKILL` est envoyé en dernier recours.
-
-Pour que l'application bénéficie de l'arrêt gracieux, elle doit intercepter `SIGTERM`.
 
 *Kemal :*
 
@@ -239,7 +278,7 @@ end
 
 *Marten :* l'arrêt gracieux est géré nativement par `Marten::Server`.
 
-=== Rollback
+== Rollback
 
 [source,sh]
 ----
@@ -248,36 +287,32 @@ bin/deploy rollback --production
 
 Pour Marten, les migrations sont ré-appliquées sur la release précédente après le rollback.
 
-=== Statut
-
-[source,sh]
-----
-bin/deploy status --preproduction
-----
-
 == Structure sur le serveur
 
 [source]
 ----
-/home/mon-app--preproduction/
+/home/mon-app--staging/
 ├── releases/
-│   ├── 20260304_143022/          ← release horodatée
-│   │   ├── bin/mon-app--preproduction
+│   ├── 20260410_143022/          ← release horodatée
+│   │   ├── bin/mon-app--staging
 │   │   └── ...
-│   └── 20260301_091500/
-├── current -> releases/20260304_143022/
+│   └── 20260409_091500/
+├── current -> releases/20260410_143022/
 └── shared/
-    ├── .env                      ← persistant entre les deploys
+    ├── .env                      ← persistant entre les déploiements
+    ├── env_exports.sh            ← exports générés par Crystal
     ├── nginx.conf                ← généré par init
+    ├── repo.git/                 ← dépôt bare (fetch incrémental)
     ├── public/
-    │   └── erreur-indisponible.html ← page d'erreur personnalisée (générée par init)
+    │   └── erreur-indisponible.html
     └── log/
+        └── cron.log
 
-/tmp/.mon-app--preproduction.pid   ← pidfile (convention /tmp comme PostgreSQL)
-/tmp/.mon-app--preproduction.sock  ← socket Unix (deploy:www 660)
+/tmp/.mon-app--staging.pid        ← pidfile
+/tmp/.mon-app--staging.sock       ← socket Unix (deploy:www 660)
 
-/usr/local/etc/rc.d/mon-app--preproduction
-/usr/local/bin/mon-app--preproduction -> current/bin/...
+/usr/local/etc/rc.d/mon_app__staging
+/usr/local/bin/mon-app--staging -> current/bin/...
 ----
 
 == NGINX
@@ -287,104 +322,108 @@ Il est automatiquement lié selon le mode détecté :
 
 [cols="1,2,2"]
 |===
-| Mode | Lien créé | Directive à ajouter dans nginx.conf principal
+| Mode | Lien créé | Directive dans nginx.conf principal
 
-| Passenger (`/opt/websites/` présent)
-| `/opt/websites/mon-app--preproduction.conf`
+| Passenger (`/opt/websites/`)
+| `/opt/websites/mon-app--staging.conf`
 | `include /opt/websites/*.conf;`
 
 | pkg FreeBSD
-| `sites-enabled/mon-app--preproduction`
+| `sites-enabled/mon-app--staging`
 | `include sites-enabled/*;`
 |===
 
-Le socket Unix est créé avec les permissions `deploy:www 660` pour que NGINX
-(qui tourne sous l'utilisateur `www`) puisse y accéder.
+Le socket Unix est créé avec les permissions `deploy:www 660` pour que NGINX puisse y accéder.
 
-[#dns-ovh]
 == Gestion des fichiers de configuration
-
-L'architecture du shard repose sur une séparation stricte des responsabilités entre les fichiers de configuration. Il est crucial de bien comprendre le rôle de chacun :
 
 [cols="2,3,1"]
 |===
 | Fichier | Rôle | Versionné
 
 | `config/deploy.yml`
-| **Source unique de vérité pour l'infrastructure.** Contient la définition des environnements (hôtes, branches, URLs, sous-domaines DNS, framework utilisé).
+| **Source unique de vérité pour l'infrastructure.** Environnements, hôtes, branches, URLs, framework.
 | **Oui**
 
 | `.env` local
-| **Secrets du développeur.** Contient les clés d'accès aux API externes (comme l'API OVH) nécessaires depuis la machine locale pour administrer l'infrastructure. Ne doit jamais contenir la configuration des serveurs.
+| **Secrets du développeur.** Clés API DNS (OVH/Gandi) pour l'administration depuis la machine locale.
 | **Non**
 
 | `shared/.env` (serveur)
-| **Secrets de l'application en production.** Construit interactivement lors de l'`init`. Contient les identifiants de base de données, clés secrètes Marten/Kemal, et identifiants SMTP. Lu uniquement par l'application sur le serveur.
+| **Secrets de l'application.** Construit lors de l'`init`. Identifiants DB, clés secrètes, SMTP.
 | **Non**
 |===
 
 [WARNING]
 ====
-Ne dupliquez **jamais** les informations de `config/deploy.yml` (comme les URLs ou les hôtes) dans votre `.env` local. Le binaire `deploy` lit directement le fichier YAML pour orchestrer les déploiements.
+Ne dupliquez jamais les informations de `config/deploy.yml` dans votre `.env` local.
 ====
 
 == Configuration DNS (optionnel)
 
-Le shard peut créer automatiquement le CNAME DNS lors de l'initialisation en utilisant l'API REST de votre registrar.
-
-=== Registrars supportés
-
-* **OVH** : Nécessite 3 clés (`OVH_APP_KEY`, `OVH_APP_SECRET`, `OVH_CONSUMER_KEY`)
-* **Gandi** : Nécessite 1 clé (`GANDI_PAT` - Personal Access Token)
-
-Les clés sont lues depuis votre fichier **`.env` local**. Si elles sont absentes, le dialogue interactif vous les demandera lors de l'`init` et les sauvegardera automatiquement dans votre `.env` local.
-
-[IMPORTANT]
-====
-Vérifiez que `.env` est bien dans votre `.gitignore` :
+Registrars supportés : **OVH** et **Gandi**.
 
 [source,sh]
 ----
-echo ".env" >> .gitignore
-----
-====
-
-== GitHub Actions (CI/CD automatique)
-
-La commande `generate-ci` génère automatiquement le fichier de workflow adapté à votre configuration et à votre framework.
-
-=== Étape 1 — Générer la clé SSH dédiée
-
-[source,sh]
-----
-ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/deploy_ed25519 -N ""
-# Autoriser la clé publique sur le serveur
-ssh-copy-id -i ~/.ssh/deploy_ed25519.pub deploy@votre-serveur.net
+bin/deploy dns-setup --staging   # Configure les clés API du registrar
 ----
 
-=== Étape 2 — Configurer les secrets GitHub
+Les enregistrements CNAME sont créés automatiquement lors du `init`.
 
-Dans les paramètres du dépôt GitHub → *Settings → Secrets and variables → Actions* :
+=== Champs DNS optionnels par environnement
 
-[cols="1,3"]
-|===
-| Secret | Valeur
+[source,yaml]
+----
+environments:
+  staging:
+    dns_subdomain: staging.mon-app    # sous-domaine (défaut : premier label de app_url)
+    dns_target: serveur.example.com.  # cible CNAME (défaut : host avec point final)
+----
 
-| `SSH_PRIVATE_KEY`
-| Contenu de `~/.ssh/deploy_ed25519` (clé privée)
-|===
-
-=== Étape 3 — Générer le workflow
+== GitHub Actions (CI/CD)
 
 [source,sh]
 ----
 bin/deploy generate-ci
-git add .github/workflows/deploy.yml
-git commit -m "ci: ajouter le workflow de déploiement automatique"
-git push
 ----
 
-Le workflow généré déclenche automatiquement un déploiement à chaque push sur les branches `developpement` (pré-production) et `production`.
+Génère `.github/workflows/deploy.yml` avec :
+
+. **Job test** : PostgreSQL, Crystal, compilation + specs
+. **Job deploy** : déploiement automatique sur push (staging / production)
+. Notifications GitHub Issues en cas d'échec
+
+=== Configuration
+
+. Générer une clé SSH dédiée et l'autoriser sur le serveur
+. Ajouter le secret `SSH_PRIVATE_KEY` dans les paramètres GitHub du dépôt
+. Lancer `bin/deploy generate-ci` et commiter le workflow
+
+== Variables d'environnement
+
+=== Gérées automatiquement (skip par défaut)
+
+Ces variables sont injectées par crystal-deploy et ne sont jamais demandées lors du `init` :
+
+* `MARTEN_ENV`, `MARTEN_ALLOWED_HOSTS`, `MARTEN_SOCKET`
+* `APP_HOST`, `APP_PORT`, `PORT`
+* `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_NAME_TEST`
+* `DATABASE_URL`
+
+=== Variables personnalisées
+
+Déclarées dans `env_vars.required` de `config/deploy.yml` :
+
+[source,yaml]
+----
+env_vars:
+  required:
+    - key: SECRET_KEY
+      secret: true
+      generate: hex64     # auto-généré si vide
+    - key: STRIPE_SECRET_KEY
+      secret: true
+----
 
 == Licence
 

@@ -97,11 +97,11 @@ dns:
   zone: example.app
 
 environments:
-  developpement:
-    branch: developpement
-    host: dev.example.com
+  staging:
+    branch: staging
+    host: staging.example.com
     user: deploy
-    app_url: https://dev.mon-app.example.app
+    app_url: https://staging.mon-app.example.app
   production:
     branch: production
     host: prod.example.com
@@ -148,9 +148,9 @@ skip:
 ----
 === Configuration de l'environnement (.env) ===
 
-[INFO] MARTEN_ENV           = developpement
+[INFO] MARTEN_ENV           = staging
 [INFO] MARTEN_ALLOWED_HOSTS = dev.mon-app.example.app
-[INFO] MARTEN_SOCKET        = /tmp/.mon-app--developpement.sock
+[INFO] MARTEN_SOCKET        = /tmp/.mon-app--staging.sock
 
 --- Variables obligatoires ---
 SECRET_KEY (généré automatiquement si vide) :
