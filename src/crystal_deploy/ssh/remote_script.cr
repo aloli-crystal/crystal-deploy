@@ -1073,16 +1073,15 @@ module CrystalDeploy
             # Étape 1 (séquentielle, rapide ~15s) :
             #   shards install + shards build marten → bin/marten disponible
             shards_prepare
-            # Étape 2 (parallèle) :
-            #   - crystal build --release en arrière-plan (~200s)
-            #   - run_migrations + run_seed avec bin/marten
+            # Étape 2 (parallèle avec crystal build --release ~200s) :
+            #   Tout ce qui utilise bin/marten peut tourner pendant la compilation
             compile_start
-            install_crontab
             run_migrations
             run_seed
+            collect_assets
+            install_crontab
             # Point de synchronisation : attendre la fin de crystal build
             compile_wait
-            collect_assets
             activate_release
             init_rcd
             generate_env_exports
