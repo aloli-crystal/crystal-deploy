@@ -280,8 +280,8 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
   end
 
   # install_crontab utilise marten install_cron si framework=marten,
-  # sinon fallback sed. Appelée dans le bloc deploy.
-  it "install_crontab est défini et appelé dans le bloc deploy" do
+  # sinon fallback sed. Appelée après shards_prepare (avant compile_wait).
+  it "install_crontab est défini et appelé après shards_prepare dans le bloc deploy" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
@@ -291,12 +291,23 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("./bin/marten install_cron")
     # Fallback : substitution sed pour les frameworks non-Marten
     content.should contain("crontab \"${CRON_TMP}\"")
-    # Elle doit être appelée dans le bloc deploy
+    # Elle doit être appelée dans le bloc deploy après shards_prepare
     deploy_start = content.index("  deploy)")
     rollback_start = content.index("  rollback)")
     if deploy_start && rollback_start
       deploy_block = content[deploy_start...rollback_start]
       deploy_block.should contain("install_crontab")
+      # Après compile_start (en parallèle avec la compilation)
+      cs_pos = deploy_block.index("compile_start")
+      ic_pos = deploy_block.index("install_crontab")
+      if cs_pos && ic_pos
+        cs_pos.should be < ic_pos
+      end
+      # Avant compile_wait
+      cw_pos = deploy_block.index("compile_wait")
+      if ic_pos && cw_pos
+        ic_pos.should be < cw_pos
+      end
     end
   end
 

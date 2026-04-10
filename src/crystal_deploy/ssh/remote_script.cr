@@ -1077,6 +1077,7 @@ module CrystalDeploy
             #   - crystal build --release en arrière-plan (~200s)
             #   - run_migrations + run_seed avec bin/marten
             compile_start
+            install_crontab
             run_migrations
             run_seed
             # Point de synchronisation : attendre la fin de crystal build
@@ -1088,7 +1089,6 @@ module CrystalDeploy
             generate_wrapper
             start_service
             reload_nginx
-            install_crontab
             cleanup_releases
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
