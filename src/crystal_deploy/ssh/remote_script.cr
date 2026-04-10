@@ -927,6 +927,7 @@ module CrystalDeploy
             # Remplacer les variables de template
             CRON_TMP=$(mktemp)
             sed -e "s|{{APP_HOME}}|${APP_HOME}|g" \
+                -e "s|{{APP_FULL_NAME}}|${APP_FULL_NAME}|g" \
                 -e "s|{{MARTEN_ENV}}|${ENV_NAME}|g" \
                 "${CRON_SRC}" > "${CRON_TMP}"
             crontab "${CRON_TMP}"

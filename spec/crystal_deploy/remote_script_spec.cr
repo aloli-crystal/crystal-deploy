@@ -289,6 +289,7 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     content.should contain("install_crontab() {")
     # Elle doit remplacer les variables de template
     content.should contain("{{APP_HOME}}")
+    content.should contain("{{APP_FULL_NAME}}")
     content.should contain("{{MARTEN_ENV}}")
     # Elle doit utiliser crontab pour installer
     content.should contain("crontab \"${CRON_TMP}\"")
