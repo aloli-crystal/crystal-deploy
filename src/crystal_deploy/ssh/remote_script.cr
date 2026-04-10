@@ -917,6 +917,24 @@ module CrystalDeploy
             log_warn "NGINX ne semble pas actif. Ignoré."
         }
 
+        # ==========================================================================
+        # CRONTAB — installe config/cron/crontab si présent dans la release
+        # ==========================================================================
+        install_crontab() {
+          CRON_SRC="${CURRENT_LINK}/config/cron/crontab"
+          if [ -f "${CRON_SRC}" ]; then
+            log_section "Installation du crontab"
+            # Remplacer les variables de template
+            CRON_TMP=$(mktemp)
+            sed -e "s|{{APP_HOME}}|${APP_HOME}|g" \
+                -e "s|{{MARTEN_ENV}}|${ENV_NAME}|g" \
+                "${CRON_SRC}" > "${CRON_TMP}"
+            crontab "${CRON_TMP}"
+            rm -f "${CRON_TMP}"
+            log_info "Crontab installé pour $(whoami)."
+          fi
+        }
+
         cleanup_releases() {
           log_section "Nettoyage (conservation des ${KEEP_RELEASES} dernières releases)"
           RELEASES_COUNT=$(ls -1 "${RELEASES_DIR}" | wc -l | tr -d ' ')
@@ -1063,6 +1081,7 @@ module CrystalDeploy
             generate_wrapper
             start_service
             reload_nginx
+            install_crontab
             cleanup_releases
             DEPLOY_END=$(date +%s)
             DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))

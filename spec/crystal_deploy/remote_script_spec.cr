@@ -279,6 +279,28 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
     end
   end
 
+  # install_crontab remplace les variables {{APP_HOME}} et {{MARTEN_ENV}}
+  # dans config/cron/crontab et l'installe via crontab(1).
+  it "install_crontab est défini et appelé dans le bloc deploy" do
+    config = SpecHelper.marten_config
+    env = SpecHelper.dev_env(config)
+    content = CrystalDeploy::SSH::RemoteScript.generate(config, env)
+    # La fonction doit être définie
+    content.should contain("install_crontab() {")
+    # Elle doit remplacer les variables de template
+    content.should contain("{{APP_HOME}}")
+    content.should contain("{{MARTEN_ENV}}")
+    # Elle doit utiliser crontab pour installer
+    content.should contain("crontab \"${CRON_TMP}\"")
+    # Elle doit être appelée dans le bloc deploy
+    deploy_start = content.index("  deploy)")
+    rollback_start = content.index("  rollback)")
+    if deploy_start && rollback_start
+      deploy_block = content[deploy_start...rollback_start]
+      deploy_block.should contain("install_crontab")
+    end
+  end
+
   it "le bloc deploy utilise shards_prepare + compile_start + compile_wait (parallélisé)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
