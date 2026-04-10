@@ -10,11 +10,11 @@ module CrystalDeploy
       end
 
       def generate : String
-        # Détecter les noms d'environnement
-        # Priorité : préfixe "preprod" ou "pre" pour la préprod, "prod" pour la prod
+        # Détecter les noms d'environnement depuis config/deploy.yml
+        # staging (ou preprod/dev) pour la préprod, production pour la prod
         preprod_env = @config.environments.keys.find { |k|
-          k.starts_with?("preprod") || k.starts_with?("pre") || k.starts_with?("dev")
-        } || "preproduction"
+          k.starts_with?("stag") || k.starts_with?("preprod") || k.starts_with?("pre") || k.starts_with?("dev")
+        } || @config.environments.keys.reject { |k| k.starts_with?("prod") }.first? || "staging"
         prod_env = @config.environments.keys.find { |k| k.starts_with?("prod") } || "production"
 
         preprod_host = @config.environments[preprod_env]?.try(&.host) || "deploy.example.com"
