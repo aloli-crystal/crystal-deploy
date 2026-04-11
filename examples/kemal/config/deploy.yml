@@ -28,11 +28,11 @@ env_vars:
   #   - MA_VARIABLE_LOCALE
 
 environments:
-  developpement:
-    branch: developpement
-    host: dev.example.com
+  staging:
+    branch: staging
+    host: staging.example.com
     user: deploy
-    app_url: https://dev.mon-app.example.app
+    app_url: https://staging.mon-app.example.app
 
   production:
     branch: production

@@ -1,0 +1,89 @@
+= Changelog
+:toc: left
+:toc-title: Versions
+:toclevels: 2
+
+== v0.1.0 — 2026-04-11
+
+Première version publique.
+
+=== Fonctionnalités
+
+* **Déploiement SSH** depuis le terminal local — aucune dépendance côté serveur
+* **Frameworks** : support natif Marten et Kemal via `framework` dans `deploy.yml`
+* **Structure Capistrano** : `releases/`, `current/`, `shared/`
+* **rc.d FreeBSD** : génération dynamique du script de service (`daemon(8)`, redémarrage auto, `REQUIRE: postgresql`)
+* **nginx.conf** : génération dynamique (mode pkg FreeBSD ou Passenger) avec pages d'erreur personnalisées (502/503/504)
+* **Dialogue interactif** pour construire le `.env` lors de l'initialisation
+* **Base de données** : création automatique utilisateur + base (PostgreSQL, MariaDB, SQLite)
+* **DNS automatique** : création CNAME via API REST OVH ou Gandi
+* **Rollback** en une commande (avec ré-application des migrations Marten)
+* **Conservation** des N dernières releases (configurable)
+* **Compilation tmux** : résistante aux coupures SSH
+* **CI/CD** : génération automatique du workflow GitHub Actions via `generate-ci`
+* **Arrêt gracieux** (zero-downtime) : SIGTERM + attente de fin des requêtes avant bascule
+* **Détection automatique** de l'environnement depuis la branche git courante
+* **Raccourcis par préfixe** : `--stag` → staging, `--prod` → production
+* **Crontab automatique** : installation idempotente depuis `config/cron/crontab`
+* **Déploiement parallélisé** : migrations, seed, assets et crontab s'exécutent pendant la compilation
+* **Variables de template** : `{{APP_HOME}}`, `{{APP_FULL_NAME}}`, `{{MARTEN_ENV}}`
+
+=== Commandes
+
+[cols="1,3"]
+|===
+| Commande | Description
+
+| `init --<env>`
+| Initialisation du serveur (une seule fois, idempotente)
+
+| `deploy --<env>`
+| Déploiement d'une nouvelle release
+
+| `deploy` (sans `--<env>`)
+| Détecte l'environnement depuis la branche git courante
+
+| `rollback --<env>`
+| Retour à la release précédente
+
+| `status --<env>`
+| Version active et releases disponibles
+
+| `generate-ci`
+| Génère le workflow GitHub Actions
+
+| `dns-setup --<env>`
+| Configure les clés DNS du registrar (OVH / Gandi)
+|===
+
+=== Bases de données supportées
+
+* PostgreSQL (dialogue socket Unix ou TCP)
+* MariaDB / MySQL
+* SQLite
+* Aucune (`database: none`)
+
+=== DNS supportés
+
+* OVH (3 clés API)
+* Gandi (Personal Access Token)
+
+=== Langues
+
+Détection automatique depuis `LANG`. Fallback anglais.
+
+* Français, Anglais, Espagnol, Allemand, Portugais, Italien, Néerlandais
+
+=== Flow de déploiement
+
+[source]
+----
+clone_repo → link_shared → shards_prepare
+→ compile_start (arrière-plan)
+  ├── run_migrations
+  ├── run_seed
+  ├── collect_assets
+  └── install_crontab
+→ compile_wait (synchronisation)
+→ activate_release → init_rcd → start_service → reload_nginx → cleanup
+----

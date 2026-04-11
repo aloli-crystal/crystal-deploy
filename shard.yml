@@ -7,9 +7,9 @@ description: >
   Génère dynamiquement les scripts rc.d et nginx.conf.
 
 authors:
-  - crystal-deploy contributors
+  - ALOLI sas <philippe@aloli.fr>
 
-crystal: ">= 1.9.0"
+crystal: ">= 1.19.1"
 
 license: MIT
 
