@@ -661,6 +661,12 @@ module CrystalDeploy
             done
             printf "\n"
           elif [ -n "${COMPILE_BG_PID:-}" ]; then
+            ELAPSED=0
+            while kill -0 "${COMPILE_BG_PID}" 2>/dev/null; do
+              sleep 10; ELAPSED=$((ELAPSED + 10))
+              printf "  [%ds] Compilation en cours...\r" "${ELAPSED}"
+            done
+            printf "\n"
             wait "${COMPILE_BG_PID}" || true
           fi
           if ! grep -q "COMPILE_OK" "${COMPILE_LOG}" 2>/dev/null; then
