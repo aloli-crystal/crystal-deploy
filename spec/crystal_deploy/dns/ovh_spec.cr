@@ -20,8 +20,8 @@ describe CrystalDeploy::DNS::Ovh do
     env = SpecHelper.dev_env(config)
     ovh = CrystalDeploy::DNS::Ovh.new(config, env)
 
-    ENV["OVH_APP_KEY"]      = "test_app_key"
-    ENV["OVH_APP_SECRET"]   = "test_app_secret"
+    ENV["OVH_APP_KEY"] = "test_app_key"
+    ENV["OVH_APP_SECRET"] = "test_app_secret"
     ENV["OVH_CONSUMER_KEY"] = "test_consumer_key"
 
     ovh.load_credentials
@@ -42,12 +42,12 @@ describe CrystalDeploy::DNS::Ovh do
     env = SpecHelper.dev_env(config)
     ovh = CrystalDeploy::DNS::Ovh.new(config, env)
 
-    secret   = "test_secret"
+    secret = "test_secret"
     consumer = "test_ck"
-    method   = "GET"
-    url      = "https://eu.api.ovh.com/1.0/test"
-    body     = ""
-    ts       = "1234567890"
+    method = "GET"
+    url = "https://eu.api.ovh.com/1.0/test"
+    body = ""
+    ts = "1234567890"
 
     # Hash attendu calculé indépendamment via le shell :
     # printf '%s' "test_secret+test_ck+GET+https://eu.api.ovh.com/1.0/test++1234567890"

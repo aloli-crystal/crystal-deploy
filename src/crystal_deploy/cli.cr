@@ -67,8 +67,8 @@ module CrystalDeploy
       end
 
       # Résolution de l'environnement
-      env_arg  = args.find { |arg| arg.starts_with?("--") }
-      config   = Config.load
+      env_arg = args.find { |arg| arg.starts_with?("--") }
+      config = Config.load
 
       env_name = if env_arg
                    env_arg.lstrip('-')

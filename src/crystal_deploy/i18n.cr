@@ -64,7 +64,7 @@ module CrystalDeploy
         value = dig(en_translations, translation_key)
       end
 
-      result = value || translation_key  # Si toujours absent, retourner la clé brute
+      result = value || translation_key # Si toujours absent, retourner la clé brute
 
       # Interpolation des arguments nommés (%{name} → valeur)
       args.each do |k, v|

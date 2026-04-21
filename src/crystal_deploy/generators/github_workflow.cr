@@ -18,7 +18,7 @@ module CrystalDeploy
         prod_env = @config.environments.keys.find { |k| k.starts_with?("prod") } || "production"
 
         preprod_host = @config.environments[preprod_env]?.try(&.host) || "deploy.example.com"
-        prod_host    = @config.environments[prod_env]?.try(&.host)    || "prod.example.com"
+        prod_host = @config.environments[prod_env]?.try(&.host) || "prod.example.com"
 
         app_db = @config.app_name.gsub("-", "_")
 

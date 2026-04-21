@@ -36,9 +36,9 @@ module CrystalDeploy
         suggested_user = @config.app_name.gsub("-", "_")
         # Suggestion base : app_name__env_name (ex: les_amis_de_joseph__developpement)
         suggested_db = "#{suggested_user}__#{@env.name.gsub("-", "_")}"
-        pg_user      = ask_with_suggestion(I18n.t("db.user_prompt"), suggested_user)
-        pg_pass      = ask_password
-        pg_db        = ask_with_suggestion(I18n.t("db.db_prompt"), suggested_db)
+        pg_user = ask_with_suggestion(I18n.t("db.user_prompt"), suggested_user)
+        pg_pass = ask_password
+        pg_db = ask_with_suggestion(I18n.t("db.db_prompt"), suggested_db)
         pg_pool_size = ask_with_suggestion(I18n.t("db.pool_size_prompt"), "10")
 
         if mode == "1"
@@ -137,14 +137,14 @@ module CrystalDeploy
 
       def socket_vars_for_test(
         socket_dir : String, user : String, pass : String,
-        db : String, pool_size : String
+        db : String, pool_size : String,
       ) : Hash(String, String)
         run_socket_dialog_pure(socket_dir, user, pass, db, pool_size)
       end
 
       def tcp_vars_for_test(
         host : String, user : String, pass : String,
-        db : String, pool_size : String
+        db : String, pool_size : String,
       ) : Hash(String, String)
         run_tcp_dialog_pure(host, user, pass, db, pool_size)
       end
@@ -152,7 +152,7 @@ module CrystalDeploy
       # Logique pure de run_socket_dialog sans appel à ask_with_suggestion
       private def run_socket_dialog_pure(
         socket_dir : String, user : String, pass : String,
-        db : String, pool_size : String
+        db : String, pool_size : String,
       ) : Hash(String, String)
         if @config.marten?
           {
@@ -173,7 +173,7 @@ module CrystalDeploy
       # Logique pure de run_tcp_dialog sans appel à ask_required
       private def run_tcp_dialog_pure(
         host : String, user : String, pass : String,
-        db : String, pool_size : String
+        db : String, pool_size : String,
       ) : Hash(String, String)
         if @config.marten?
           {

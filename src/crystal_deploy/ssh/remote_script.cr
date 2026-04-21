@@ -17,24 +17,24 @@ module CrystalDeploy
         <<-FUNC
         init_rcd() {
           log_section "Script rc.d"
-          RCD_SHARED="\${SHARED_DIR}/rc.d.\${SERVICE_RC_NAME}"
-          RCD_LINK="/usr/local/etc/rc.d/\${SERVICE_RC_NAME}"
+          RCD_SHARED="${SHARED_DIR}/rc.d.${SERVICE_RC_NAME}"
+          RCD_LINK="/usr/local/etc/rc.d/${SERVICE_RC_NAME}"
           # Générer le script rc.d depuis le contenu encodé en base64
           # (contenu généré par crystal-deploy lors de la création du script de déploiement)
-          printf '%s' "#{rcd_b64}" | base64 -d | sudo tee "\${RCD_SHARED}" >/dev/null
-          sudo chmod 755 "\${RCD_SHARED}"
-          sudo chown root:wheel "\${RCD_SHARED}"
-          log_info "Script rc.d généré : \${RCD_SHARED}"
-          sudo rm -f "\${RCD_LINK}"
-          sudo ln -s "\${RCD_SHARED}" "\${RCD_LINK}"
-          log_info "Lien symbolique créé : \${RCD_LINK} → \${RCD_SHARED}"
-          if ! grep -q "\${SERVICE_RC_NAME}_enable" /etc/rc.conf 2>/dev/null; then
-            printf "\\n# \${APP_FULL_NAME} — ajouté par deploy le %s\\n" "\$(date)" \\
+          printf '%s' "#{rcd_b64}" | base64 -d | sudo tee "${RCD_SHARED}" >/dev/null
+          sudo chmod 755 "${RCD_SHARED}"
+          sudo chown root:wheel "${RCD_SHARED}"
+          log_info "Script rc.d généré : ${RCD_SHARED}"
+          sudo rm -f "${RCD_LINK}"
+          sudo ln -s "${RCD_SHARED}" "${RCD_LINK}"
+          log_info "Lien symbolique créé : ${RCD_LINK} → ${RCD_SHARED}"
+          if ! grep -q "${SERVICE_RC_NAME}_enable" /etc/rc.conf 2>/dev/null; then
+            printf "\\n# ${APP_FULL_NAME} — ajouté par deploy le %s\\n" "$(date)" \\
               | sudo tee -a /etc/rc.conf >/dev/null
-            printf '%s_enable="YES"\\n' "\${SERVICE_RC_NAME}" | sudo tee -a /etc/rc.conf >/dev/null
+            printf '%s_enable="YES"\\n' "${SERVICE_RC_NAME}" | sudo tee -a /etc/rc.conf >/dev/null
             log_info "Ligne ajoutée dans /etc/rc.conf."
           else
-            log_info "\${SERVICE_RC_NAME}_enable déjà présent dans /etc/rc.conf."
+            log_info "${SERVICE_RC_NAME}_enable déjà présent dans /etc/rc.conf."
           fi
         }
         FUNC
@@ -296,8 +296,8 @@ module CrystalDeploy
         }
 
         SHELL_EOF
-        init_rcd_function(rcd_b64) +
-        <<-'SHELL_EOF'
+          init_rcd_function(rcd_b64) +
+          <<-'SHELL_EOF'
 
         # ---------------------------------------------------------------------------
         # create_database : crée l'utilisateur et la base PostgreSQL (sans migrations ni seed)

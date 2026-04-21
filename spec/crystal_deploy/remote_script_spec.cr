@@ -168,8 +168,8 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
       cdb_pos = init_block.index("create_database")
       cw_pos = init_block.index("compile_wait")
       if cs_pos && cdb_pos && cw_pos
-        cs_pos.should be < cdb_pos   # compile_start avant create_database
-        cdb_pos.should be < cw_pos   # create_database avant compile_wait
+        cs_pos.should be < cdb_pos # compile_start avant create_database
+        cdb_pos.should be < cw_pos # create_database avant compile_wait
       end
     end
   end
@@ -185,7 +185,7 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
       cw_pos = init_block.index("compile_wait")
       ar_pos = init_block.index("activate_release")
       if cw_pos && ar_pos
-        cw_pos.should be < ar_pos   # compile_wait avant activate_release
+        cw_pos.should be < ar_pos # compile_wait avant activate_release
       end
     end
   end
@@ -203,9 +203,9 @@ describe CrystalDeploy::SSH::RemoteScript, "non-régression" do
       ar_pos = init_block.index("activate_release")
       # Chercher l'APPEL de init_rcd (ligne seule avec indentation) et non sa définition
       # La définition est "init_rcd() {" ; l'appel est "            init_rcd" (sans paren)
-      rcd_call_pos = init_block.index(/^\s+init_rcd\s*$/)  # ligne seule, pas de (){}
+      rcd_call_pos = init_block.index(/^\s+init_rcd\s*$/) # ligne seule, pas de (){}
       if ar_pos && rcd_call_pos
-        ar_pos.should be < rcd_call_pos   # activate_release avant l'appel de init_rcd
+        ar_pos.should be < rcd_call_pos # activate_release avant l'appel de init_rcd
       end
     end
   end

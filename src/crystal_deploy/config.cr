@@ -74,8 +74,8 @@ module CrystalDeploy
   class DnsConfig
     include YAML::Serializable
 
-    property registrar : String   # ovh | gandi
-    property zone : String        # zone DNS gérée (ex: example.app)
+    property registrar : String # ovh | gandi
+    property zone : String      # zone DNS gérée (ex: example.app)
 
     # Alias de zone pour la compatibilité avec les méthodes appelantes
     def effective_zone : String
@@ -223,7 +223,7 @@ module CrystalDeploy
     def load_env_example(
       path : String,
       skip_keys : Array(String),
-      already_defined : Array(String)
+      already_defined : Array(String),
     ) : Array(EnvExampleVar)
       return [] of EnvExampleVar unless File.exists?(path)
 

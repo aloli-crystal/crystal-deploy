@@ -32,9 +32,9 @@ module CrystalDeploy
       parse(content).each do |key, value|
         # Échapper les caractères spéciaux pour le double-quoting shell
         escaped = value.gsub('\\', "\\\\")
-                       .gsub('"', "\\\"")
-                       .gsub('$', "\\$")
-                       .gsub('`', "\\`")
+          .gsub('"', "\\\"")
+          .gsub('$', "\\$")
+          .gsub('`', "\\`")
         lines << %(export #{key}="#{escaped}")
       end
       lines.join("\n") + "\n"

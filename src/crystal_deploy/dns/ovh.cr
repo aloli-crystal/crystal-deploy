@@ -29,8 +29,8 @@ module CrystalDeploy
 
       def load_credentials : Nil
         # Source 1 : variables d'environnement
-        @app_key      = ENV.fetch("OVH_APP_KEY", "")
-        @app_secret   = ENV.fetch("OVH_APP_SECRET", "")
+        @app_key = ENV.fetch("OVH_APP_KEY", "")
+        @app_secret = ENV.fetch("OVH_APP_SECRET", "")
         @consumer_key = ENV.fetch("OVH_CONSUMER_KEY", "")
 
         return if credentials_present?
@@ -41,8 +41,8 @@ module CrystalDeploy
             next if line.strip.starts_with?("#") || line.strip.empty?
             k, _, v = line.partition("=")
             case k.strip
-            when "OVH_APP_KEY"      then @app_key      = v.strip if @app_key.empty?
-            when "OVH_APP_SECRET"   then @app_secret   = v.strip if @app_secret.empty?
+            when "OVH_APP_KEY"      then @app_key = v.strip if @app_key.empty?
+            when "OVH_APP_SECRET"   then @app_secret = v.strip if @app_secret.empty?
             when "OVH_CONSUMER_KEY" then @consumer_key = v.strip if @consumer_key.empty?
             end
           end
@@ -50,8 +50,8 @@ module CrystalDeploy
       end
 
       def ask_credentials : Nil
-        @app_key      = ask(I18n.t("dns.key_app_key") + " : ")
-        @app_secret   = ask(I18n.t("dns.key_app_secret") + " : ")
+        @app_key = ask(I18n.t("dns.key_app_key") + " : ")
+        @app_secret = ask(I18n.t("dns.key_app_secret") + " : ")
         @consumer_key = ask(I18n.t("dns.key_consumer_key") + " : ")
       end
 
@@ -129,10 +129,10 @@ module CrystalDeploy
         # Créer le CNAME.
         # La cible doit se terminer par "." (FQDN) — on l'ajoute si absent.
         fqdn_target = target.ends_with?(".") ? target : "#{target}."
-        post_url    = "#{API_URL}/domain/zone/#{zone}/record"
-        body        = %({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{fqdn_target}","ttl":3600})
-        ts          = curl_get("#{API_URL}/auth/time")
-        post_sig    = sign(@app_secret, @consumer_key, "POST", post_url, body, ts)
+        post_url = "#{API_URL}/domain/zone/#{zone}/record"
+        body = %({"fieldType":"CNAME","subDomain":"#{subdomain}","target":"#{fqdn_target}","ttl":3600})
+        ts = curl_get("#{API_URL}/auth/time")
+        post_sig = sign(@app_secret, @consumer_key, "POST", post_url, body, ts)
 
         result = curl_post(post_url, body, {
           "Content-Type"      => "application/json",
@@ -153,7 +153,7 @@ module CrystalDeploy
       # ── Privé ──────────────────────────────────────────────────────────────
 
       private def refresh_zone(zone : String) : Nil
-        ts      = curl_get("#{API_URL}/auth/time")
+        ts = curl_get("#{API_URL}/auth/time")
         ref_url = "#{API_URL}/domain/zone/#{zone}/refresh"
         ref_sig = sign(@app_secret, @consumer_key, "POST", ref_url, "", ts)
 
@@ -212,8 +212,8 @@ module CrystalDeploy
 
       # ── État interne ───────────────────────────────────────────────────────
 
-      @app_key      : String = ""
-      @app_secret   : String = ""
+      @app_key : String = ""
+      @app_secret : String = ""
       @consumer_key : String = ""
     end
   end

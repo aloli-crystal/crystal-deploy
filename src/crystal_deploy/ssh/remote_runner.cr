@@ -25,13 +25,13 @@ module CrystalDeploy
         @pg_user_b64 : String = "",
         @pg_pass_b64 : String = "",
         @pg_db_b64 : String = "",
-        @pg_host_b64 : String = ""
+        @pg_host_b64 : String = "",
       )
       end
 
       def run : Nil
         remote_script = "/tmp/#{REMOTE_SCRIPT_NAME}"
-        remote_data   = "/tmp/#{REMOTE_DATA_NAME}"
+        remote_data = "/tmp/#{REMOTE_DATA_NAME}"
 
         # Générer le script distant en mémoire
         script_content = RemoteScript.generate(@config, @env)
@@ -106,11 +106,11 @@ module CrystalDeploy
           @env.branch,
           @config.repo_url,
           @config.crystal_main,
-          @config.crystal_flags.try(&.presence) || "-",  # "-" si vide pour éviter le décalage d'arguments
+          @config.crystal_flags.try(&.presence) || "-", # "-" si vide pour éviter le décalage d'arguments
           @config.keep_releases.to_s,
           @command,
-          remote_data,                    # $10 : chemin du fichier de données
-          @config.framework,              # $11 : framework (marten | kemal)
+          remote_data,       # $10 : chemin du fichier de données
+          @config.framework, # $11 : framework (marten | kemal)
         ]
         # Nettoyage des fichiers distants après exécution
         args.join(" ") + "; rm -f #{remote_script} #{remote_data}"

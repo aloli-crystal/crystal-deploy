@@ -93,7 +93,7 @@ module CrystalDeploy
         # Créer le CNAME
         # POST /v5/livedns/domains/{fqdn}/records/{rrset_name}/CNAME
         post_url = "#{API_URL}/domains/#{zone}/records/#{subdomain}/CNAME"
-        body     = %Q({"rrset_values":["#{target}."],"rrset_ttl":3600})
+        body = %Q({"rrset_values":["#{target}."],"rrset_ttl":3600})
 
         result = `curl -s -X POST \
           -H "Content-Type: application/json" \

@@ -37,8 +37,8 @@ module CrystalDeploy
       # Gère le flux complet : chargement credentials → dialogue → création CNAME
       def setup : Nil
         subdomain = @env.effective_dns_subdomain
-        target    = @env.effective_dns_target
-        zone      = @config.dns_zone || @env.dns_zone
+        target = @env.effective_dns_target
+        zone = @config.dns_zone || @env.dns_zone
 
         return if subdomain.empty? || target.empty?
 
@@ -49,7 +49,7 @@ module CrystalDeploy
         if credentials_present?
           log_info I18n.t("dns.keys_found", registrar: registrar_name)
           return unless confirm_no?(I18n.t("dns.confirm_cname",
-            sub: subdomain, zone: zone, target: target))
+                          sub: subdomain, zone: zone, target: target))
           create_cname(subdomain, target, zone)
           return
         end

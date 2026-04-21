@@ -37,10 +37,10 @@ module CrystalDeploy
           config: @config,
           env: @env,
           command: "init",
-          env_b64:     Base64.strict_encode(build_env_content(env_values)),
+          env_b64: Base64.strict_encode(build_env_content(env_values)),
           pg_user_b64: Base64.strict_encode(pg_vars.fetch("DB_USER", "")),
           pg_pass_b64: Base64.strict_encode(pg_vars.fetch("DB_PASSWORD", "")),
-          pg_db_b64:   Base64.strict_encode(pg_vars.fetch("DB_NAME", "")),
+          pg_db_b64: Base64.strict_encode(pg_vars.fetch("DB_NAME", "")),
           pg_host_b64: Base64.strict_encode(pg_vars.fetch("DB_HOST", ""))
         )
         runner.run
@@ -103,13 +103,13 @@ module CrystalDeploy
       # ── Variables Marten automatiques ──────────────────────────────────────
 
       private def inject_marten_vars(env_values : Hash(String, String)) : Nil
-        marten_env    = @env.name
-        marten_host   = @env.hostname
+        marten_env = @env.name
+        marten_host = @env.hostname
         marten_socket = @env.socket_path(@config.app_name)
 
-        env_values["MARTEN_ENV"]           = marten_env
+        env_values["MARTEN_ENV"] = marten_env
         env_values["MARTEN_ALLOWED_HOSTS"] = marten_host
-        env_values["MARTEN_SOCKET"]        = marten_socket
+        env_values["MARTEN_SOCKET"] = marten_socket
         # APP_HOST et APP_PORT : repli TCP si MARTEN_SOCKET n'est pas défini.
         # Valeurs par défaut : 127.0.0.1 et 8000 (défauts Marten).
         env_values["APP_HOST"] = "127.0.0.1"
@@ -223,7 +223,7 @@ module CrystalDeploy
         lines = [
           "# #{@config.app_name} — #{@env.name}",
           "# Généré par crystal-deploy le #{Time.local}",
-          ""
+          "",
         ]
         values.each do |k, v|
           next if v.empty?
