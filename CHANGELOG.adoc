@@ -3,6 +3,14 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.2 — 2026-04-22
+
+* Rename the build target from `deploy` to `crystal-deploy` for
+  ecosystem consistency. Building now uses
+  `shards build crystal-deploy` and produces `bin/crystal-deploy`
+  (previously `bin/deploy`). Callers that invoke the binary by its
+  path must update accordingly; no behaviour change otherwise.
+
 == v0.1.1 — 2026-04-22
 
 * Add continuous integration infrastructure (GitHub Actions): format check, test run, static analysis.

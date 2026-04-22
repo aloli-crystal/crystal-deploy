@@ -3,6 +3,14 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.2 — 2026-04-22
+
+* Renommage de la cible de compilation de `deploy` vers `crystal-deploy`
+  pour cohérence avec l'écosystème. La compilation utilise désormais
+  `shards build crystal-deploy` et produit `bin/crystal-deploy`
+  (précédemment `bin/deploy`). Les appelants qui invoquent le binaire
+  par son chemin doivent s'adapter ; aucun changement fonctionnel.
+
 == v0.1.1 — 2026-04-22
 
 * Intégration de l'infrastructure d'intégration continue (GitHub Actions) : vérification du formatage, lancement des tests, analyse statique.
