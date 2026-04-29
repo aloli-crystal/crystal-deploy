@@ -3,6 +3,19 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.3 — 2026-04-29
+
+=== Changed
+
+* **GitHub repository renamed** from `aloli-crystal/crystal-deploy` to
+  `aloli-crystal/deploy` (Aloli naming convention: original creations
+  drop the `crystal-` prefix). Old links redirect automatically.
+* `name:` field in `shard.yml` updated from `crystal-deploy` to `deploy`.
+* **Build target renamed back** from `crystal-deploy` to `deploy`
+  (reverts the v0.1.2 rename — the new ecosystem convention drops the
+  prefix from binaries too). Building now uses `shards build deploy`
+  and produces `bin/deploy` again.
+
 == v0.1.2 — 2026-04-22
 
 * Rename the build target from `deploy` to `crystal-deploy` for

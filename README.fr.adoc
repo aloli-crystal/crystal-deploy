@@ -1,4 +1,4 @@
-= crystal-deploy
+= deploy
 :toc: left
 :toc-title: Table des matières
 :toclevels: 3
@@ -35,13 +35,13 @@ Ajoutez le shard dans votre `shard.yml` :
 [source,yaml]
 ----
 dependencies:
-  crystal-deploy:
-    github: aloli-crystal/crystal-deploy
+  deploy:
+    github: aloli-crystal/deploy
     branch: main
 
 targets:
   deploy:
-    main: lib/crystal-deploy/src/deploy.cr
+    main: lib/deploy/src/deploy.cr
 ----
 
 Puis compilez le binaire `deploy` :
@@ -60,7 +60,7 @@ Copiez le fichier d'exemple dans votre projet :
 
 [source,sh]
 ----
-cp lib/crystal-deploy/examples/marten/config/deploy.yml config/deploy.yml
+cp lib/deploy/examples/marten/config/deploy.yml config/deploy.yml
 ----
 
 Puis adaptez `config/deploy.yml` :
@@ -255,7 +255,7 @@ class InstallCron < Marten::CLI::Command
 end
 ----
 
-crystal-deploy appelle cette commande avec les variables d'environnement `APP_HOME`, `APP_FULL_NAME` et `MARTEN_ENV`.
+deploy appelle cette commande avec les variables d'environnement `APP_HOME`, `APP_FULL_NAME` et `MARTEN_ENV`.
 
 == Arrêt gracieux (zero-downtime)
 
@@ -403,7 +403,7 @@ Génère `.github/workflows/deploy.yml` avec :
 
 === Gérées automatiquement (skip par défaut)
 
-Ces variables sont injectées par crystal-deploy et ne sont jamais demandées lors du `init` :
+Ces variables sont injectées par deploy et ne sont jamais demandées lors du `init` :
 
 * `MARTEN_ENV`, `MARTEN_ALLOWED_HOSTS`, `MARTEN_SOCKET`
 * `APP_HOST`, `APP_PORT`, `PORT`

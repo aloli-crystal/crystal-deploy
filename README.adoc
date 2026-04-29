@@ -1,4 +1,4 @@
-= crystal-deploy
+= deploy
 :toc: left
 :toc-title: Table of Contents
 :toclevels: 3
@@ -35,13 +35,13 @@ Add the shard to your `shard.yml`:
 [source,yaml]
 ----
 dependencies:
-  crystal-deploy:
-    github: aloli-crystal/crystal-deploy
+  deploy:
+    github: aloli-crystal/deploy
     branch: main
 
 targets:
   deploy:
-    main: lib/crystal-deploy/src/deploy.cr
+    main: lib/deploy/src/deploy.cr
 ----
 
 Then compile the `deploy` binary:
@@ -60,7 +60,7 @@ Copy the example file to your project:
 
 [source,sh]
 ----
-cp lib/crystal-deploy/examples/marten/config/deploy.yml config/deploy.yml
+cp lib/deploy/examples/marten/config/deploy.yml config/deploy.yml
 ----
 
 Then adapt `config/deploy.yml`:
@@ -387,7 +387,7 @@ Generates `.github/workflows/deploy.yml` with:
 
 === Automatically managed (skipped by default)
 
-These variables are injected by crystal-deploy and are never requested during `init`:
+These variables are injected by deploy and are never requested during `init`:
 
 * `MARTEN_ENV`, `MARTEN_ALLOWED_HOSTS`, `MARTEN_SOCKET`
 * `APP_HOST`, `APP_PORT`, `PORT`
