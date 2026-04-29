@@ -1,5 +1,5 @@
 require "spec"
-require "../src/crystal_deploy"
+require "../src/deploy"
 
 # Helpers partagés pour les tests
 module SpecHelper
@@ -43,19 +43,19 @@ module SpecHelper
         app_url: https://dev.test-app.example.app
     YAML
 
-  def self.marten_config : CrystalDeploy::Config
-    c = CrystalDeploy::Config.from_yaml(MARTEN_YAML)
+  def self.marten_config : Deploy::Config
+    c = Deploy::Config.from_yaml(MARTEN_YAML)
     c.environments.each { |name, env| env.name = name }
     c
   end
 
-  def self.kemal_config : CrystalDeploy::Config
-    c = CrystalDeploy::Config.from_yaml(KEMAL_YAML)
+  def self.kemal_config : Deploy::Config
+    c = Deploy::Config.from_yaml(KEMAL_YAML)
     c.environments.each { |name, env| env.name = name }
     c
   end
 
-  def self.dev_env(config : CrystalDeploy::Config) : CrystalDeploy::Environment
+  def self.dev_env(config : Deploy::Config) : Deploy::Environment
     config.environment("developpement")
   end
 end

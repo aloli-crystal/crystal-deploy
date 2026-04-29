@@ -3,24 +3,44 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.4 — 2026-04-29
+
+=== Modifié
+
+* **Module interne renommé** `CrystalDeploy` → `Deploy` (convention
+  Aloli : retrait du préfixe `Crystal` sur les modules internes).
+* Dossier source `src/crystal_deploy/` → `src/deploy/` (et le dossier
+  spec correspondant). Chemins `require` internes adaptés.
+* **Points d'entrée restructurés** pour s'aligner sur le reste de
+  l'écosystème Aloli :
+** `src/deploy.cr` devient le point d'entrée **bibliothèque** (charge
+   tous les modules `Deploy::*`).
+** `src/cli.cr` est le nouveau point d'entrée **binaire** (one-liner
+   qui charge la bibliothèque et appelle `Deploy::CLI.run(ARGV)`).
+** `shard.yml` `targets.deploy.main` pointe désormais sur
+   `src/cli.cr`. La compilation produit toujours `bin/deploy` ; côté
+   consommateur, la bibliothèque n'exécute plus la CLI comme
+   effet de bord sur `require "deploy"` (bug précédent corrigé).
+* Comportement et surface CLI inchangés.
+
 == v0.1.3 — 2026-04-29
 
 === Modifié
 
-* **Repo GitHub renommé** `aloli-crystal/crystal-deploy` → `aloli-crystal/deploy`
+* **Repo GitHub renommé** `aloli-crystal/deploy` → `aloli-crystal/deploy`
   (convention de nommage Aloli : les créations originales abandonnent
   le préfixe `crystal-`). Les anciens liens redirigent automatiquement.
-* Champ `name:` du `shard.yml` mis à jour de `crystal-deploy` à `deploy`.
-* **Cible de compilation renommée** de `crystal-deploy` à `deploy`
+* Champ `name:` du `shard.yml` mis à jour de `deploy` à `deploy`.
+* **Cible de compilation renommée** de `deploy` à `deploy`
   (annule le renommage de v0.1.2 — la nouvelle convention de l'écosystème
   supprime aussi le préfixe sur les binaires). La compilation utilise
   désormais `shards build deploy` et produit à nouveau `bin/deploy`.
 
 == v0.1.2 — 2026-04-22
 
-* Renommage de la cible de compilation de `deploy` vers `crystal-deploy`
+* Renommage de la cible de compilation de `deploy` vers `deploy`
   pour cohérence avec l'écosystème. La compilation utilise désormais
-  `shards build crystal-deploy` et produit `bin/crystal-deploy`
+  `shards build deploy` et produit `bin/deploy`
   (précédemment `bin/deploy`). Les appelants qui invoquent le binaire
   par son chemin doivent s'adapter ; aucun changement fonctionnel.
 

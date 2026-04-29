@@ -1,3 +1,31 @@
-require "./crystal_deploy"
+require "yaml"
+require "colorize"
+require "openssl/hmac"
 
-CrystalDeploy::CLI.run(ARGV)
+require "./deploy/i18n"
+require "./deploy/logger"
+require "./deploy/config"
+require "./deploy/dns/base"
+require "./deploy/dns/ovh"
+require "./deploy/dns/gandi"
+require "./deploy/db/base"
+require "./deploy/db/postgresql"
+require "./deploy/db/sqlite"
+require "./deploy/db/mariadb"
+require "./deploy/generators/github_workflow"
+require "./deploy/generators/nginx"
+require "./deploy/generators/rcd"
+require "./deploy/env_parser"
+require "./deploy/ssh/client"
+require "./deploy/ssh/remote_script"
+require "./deploy/ssh/remote_runner"
+require "./deploy/commands/deploy"
+require "./deploy/commands/init"
+require "./deploy/commands/rollback"
+require "./deploy/commands/status"
+require "./deploy/commands/generate_ci"
+require "./deploy/cli"
+
+module Deploy
+  VERSION = "0.1.0"
+end

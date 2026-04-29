@@ -1,5 +1,5 @@
 name: deploy
-version: 0.1.3
+version: 0.1.4
 
 description: >
   Shard Crystal pour le déploiement d'applications Marten et Kemal sur FreeBSD.
@@ -20,4 +20,4 @@ development_dependencies:
 
 targets:
   deploy:
-    main: src/deploy.cr
+    main: src/cli.cr

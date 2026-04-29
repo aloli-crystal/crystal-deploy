@@ -3,24 +3,44 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.4 — 2026-04-29
+
+=== Changed
+
+* **Internal module renamed** `CrystalDeploy` → `Deploy` (Aloli
+  convention: drop the `Crystal` prefix on internal modules).
+* Source folder `src/crystal_deploy/` → `src/deploy/` (and the
+  matching spec folder). Internal `require` paths updated.
+* **Entry-point restructured** to align with the rest of the Aloli
+  ecosystem:
+** `src/deploy.cr` is now the **library** entry-point (loads all
+   `Deploy::*` modules).
+** `src/cli.cr` is the new **binary** entry-point (one-liner that
+   loads the library and calls `Deploy::CLI.run(ARGV)`).
+** `shard.yml` `targets.deploy.main` updated to `src/cli.cr`.
+   Building still produces `bin/deploy` ; consumer-side, the library
+   no longer has the side effect of running the CLI on
+   `require "deploy"` (previous bug fixed).
+* Behaviour and CLI surface unchanged.
+
 == v0.1.3 — 2026-04-29
 
 === Changed
 
-* **GitHub repository renamed** from `aloli-crystal/crystal-deploy` to
+* **GitHub repository renamed** from `aloli-crystal/deploy` to
   `aloli-crystal/deploy` (Aloli naming convention: original creations
   drop the `crystal-` prefix). Old links redirect automatically.
-* `name:` field in `shard.yml` updated from `crystal-deploy` to `deploy`.
-* **Build target renamed back** from `crystal-deploy` to `deploy`
+* `name:` field in `shard.yml` updated from `deploy` to `deploy`.
+* **Build target renamed back** from `deploy` to `deploy`
   (reverts the v0.1.2 rename — the new ecosystem convention drops the
   prefix from binaries too). Building now uses `shards build deploy`
   and produces `bin/deploy` again.
 
 == v0.1.2 — 2026-04-22
 
-* Rename the build target from `deploy` to `crystal-deploy` for
+* Rename the build target from `deploy` to `deploy` for
   ecosystem consistency. Building now uses
-  `shards build crystal-deploy` and produces `bin/crystal-deploy`
+  `shards build deploy` and produces `bin/deploy`
   (previously `bin/deploy`). Callers that invoke the binary by its
   path must update accordingly; no behaviour change otherwise.
 
