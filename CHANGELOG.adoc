@@ -3,6 +3,20 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.6 — 2026-04-30
+
+=== Fixed
+
+* **`init`: robust bare-clone setup.** `init_repo()` no longer trusts
+  the bare `[ -d "${REPO_DIR}" ]` test: it now uses
+  `git rev-parse --is-bare-repository` to confirm the directory is an
+  actual git repo. If a previous init left an empty/partial directory
+  (failed clone, missing SSH key, wrong URL…), we wipe and re-clone
+  instead of falling through to `git fetch`, which used to crash with
+  *fatal: not a git repository*.
+* If `git clone --bare` fails, the empty directory is cleaned up so the
+  next `init` is not trapped by its own "already present" guard.
+
 == v0.1.5 — 2026-04-30
 
 === Added

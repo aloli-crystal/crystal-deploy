@@ -1,5 +1,5 @@
 name: deploy
-version: 0.1.5
+version: 0.1.6
 
 description: >
   Shard Crystal pour le déploiement d'applications Marten et Kemal sur FreeBSD.

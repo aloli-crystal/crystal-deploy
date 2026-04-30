@@ -261,18 +261,33 @@ module Deploy
         # ---------------------------------------------------------------------------
         init_repo() {
           if [ -d "${REPO_DIR}" ]; then
-            log_info "Dépôt bare déjà présent : ${REPO_DIR}"
-            # Vérifier que le refspec fetch est bien configuré (init précédent sans ce correctif)
-            CURRENT_FETCH=$(git --git-dir="${REPO_DIR}" config remote.origin.fetch 2>/dev/null || echo "")
-            if [ "${CURRENT_FETCH}" != "+refs/heads/*:refs/heads/*" ]; then
-              git --git-dir="${REPO_DIR}" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
-              log_info "Refspec fetch corrigé dans le bare."
+            # Le répertoire existe : vérifier que c'est bien un dépôt git bare.
+            # Cas d'un init précédent avorté (clone échoué, clé SSH manquante,
+            # etc.) qui aurait laissé un dossier vide ou partiel : on nettoie.
+            if git --git-dir="${REPO_DIR}" rev-parse --is-bare-repository >/dev/null 2>&1; then
+              log_info "Dépôt bare déjà présent : ${REPO_DIR}"
+              # Vérifier que le refspec fetch est bien configuré
+              CURRENT_FETCH=$(git --git-dir="${REPO_DIR}" config remote.origin.fetch 2>/dev/null || echo "")
+              if [ "${CURRENT_FETCH}" != "+refs/heads/*:refs/heads/*" ]; then
+                git --git-dir="${REPO_DIR}" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
+                log_info "Refspec fetch corrigé dans le bare."
+              fi
+              return 0
+            else
+              log_warn "Répertoire ${REPO_DIR} présent mais ce n'est pas un dépôt git valide (init précédent avorté ?) — suppression et re-clone."
+              sudo rm -rf "${REPO_DIR}"
             fi
-            return 0
           fi
           log_section "Initialisation du dépôt bare"
           sudo install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 750 "${REPO_DIR}"
-          git clone --bare "${REPO_URL}" "${REPO_DIR}"
+          if ! git clone --bare "${REPO_URL}" "${REPO_DIR}"; then
+            # Échec du clone (clé SSH absente, repo privé, URL fautive…) :
+            # on nettoie le dossier vide pour que la prochaine tentative
+            # ne soit pas piégée par notre propre garde "déjà présent".
+            log_error "Échec du git clone --bare ${REPO_URL}. Nettoyage du dossier vide."
+            sudo rm -rf "${REPO_DIR}"
+            return 1
+          fi
           # Configurer le refspec fetch pour que git fetch --prune origin
           # mette à jour les branches locales du bare (absent par défaut en mode bare)
           git --git-dir="${REPO_DIR}" config remote.origin.fetch '+refs/heads/*:refs/heads/*'
