@@ -84,10 +84,14 @@ module Deploy
         # Règles effectives : required depuis deploy.yml + skip par défaut du shard
         rules = @config.effective_env_vars
 
-        # ── 1. Variables Marten injectées automatiquement ─────────────────────
+        # ── 1. Variables auto-injectées selon le framework ────────────────────
         if @config.marten?
           log_section I18n.t("init.auto_injected")
           inject_marten_vars(env_values)
+          puts ""
+        elsif @config.kemal?
+          log_section I18n.t("init.auto_injected")
+          inject_kemal_vars(env_values)
           puts ""
         end
 
@@ -156,6 +160,26 @@ module Deploy
         log_info "MARTEN_SOCKET        = #{marten_socket}"
         log_info "APP_HOST             = 127.0.0.1 (repli TCP)"
         log_info "APP_PORT             = 8000 (repli TCP)"
+      end
+
+      # ── Variables Kemal automatiques ───────────────────────────────────────
+
+      # Calcule les variables d'environnement injectées automatiquement pour
+      # un projet Kemal : APP_URL (depuis config/deploy.yml → environments.<env>.app_url)
+      # et UNIX_SOCKET (convention /tmp/.<app>--<env>.sock). Méthode pure,
+      # publique pour permettre les tests unitaires.
+      def self.kemal_auto_vars(app_url : String, socket_path : String) : Hash(String, String)
+        {
+          "APP_URL"     => app_url,
+          "UNIX_SOCKET" => socket_path,
+        }
+      end
+
+      private def inject_kemal_vars(env_values : Hash(String, String)) : Nil
+        Init.kemal_auto_vars(@env.app_url, @env.socket_path(@config.app_name)).each do |k, v|
+          env_values[k] = v
+          log_info "%-20s = %s" % [k, v]
+        end
       end
 
       # ── Variable obligatoire ───────────────────────────────────────────────

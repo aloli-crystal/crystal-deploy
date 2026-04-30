@@ -3,6 +3,28 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.9 — 2026-04-30
+
+=== Corrigé
+
+* **Kemal : `app_url` du `config/deploy.yml` désormais respecté.**
+  Le shard ne consultait que la variable `APP_URL` du `.env` distant
+  pour fabriquer le `server_name` nginx et le message
+  *Site disponible : ...*. Or `init` ne posait pas cette variable :
+  les déploiements Kemal retombaient systématiquement sur l'URL de
+  démonstration `<app>--<env>.example.app`.
+
+  `init` injecte maintenant automatiquement deux variables côté Kemal
+  (équivalent du `inject_marten_vars` côté Marten) :
+
+  ** `APP_URL` ← `environments.<env>.app_url`
+  ** `UNIX_SOCKET` ← `/tmp/.<app>--<env>.sock`
+
+=== Documentation
+
+* `Init.kemal_auto_vars(app_url, socket_path)` extrait en méthode
+  publique pure et testée (2 nouveaux specs).
+
 == v0.1.8 — 2026-04-30
 
 === Modifié

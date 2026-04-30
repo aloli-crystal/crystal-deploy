@@ -56,4 +56,21 @@ describe Deploy::Commands::Init do
       Deploy::Commands::Init.parse_confirm_choice("123").should be_nil
     end
   end
+
+  describe ".kemal_auto_vars" do
+    it "expose APP_URL et UNIX_SOCKET depuis la conf" do
+      vars = Deploy::Commands::Init.kemal_auto_vars(
+        "https://quizz.quimeo.fr",
+        "/tmp/.quimeo-quizz--production.sock"
+      )
+      vars["APP_URL"].should eq "https://quizz.quimeo.fr"
+      vars["UNIX_SOCKET"].should eq "/tmp/.quimeo-quizz--production.sock"
+      vars.size.should eq 2
+    end
+
+    it "ne touche pas à l'URL passée (pas de transformation)" do
+      vars = Deploy::Commands::Init.kemal_auto_vars("http://internal.lan", "/tmp/x.sock")
+      vars["APP_URL"].should eq "http://internal.lan"
+    end
+  end
 end

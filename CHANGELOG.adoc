@@ -3,6 +3,28 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.9 — 2026-04-30
+
+=== Fixed
+
+* **Kemal: `app_url` from `config/deploy.yml` is now honoured.**
+  The shard only read the `APP_URL` variable from the remote `.env`
+  to build the nginx `server_name` and the *Site available: ...*
+  log line. But `init` never wrote that variable: every Kemal
+  deployment fell back to the placeholder
+  `<app>--<env>.example.app`.
+
+  `init` now auto-injects two variables on Kemal projects (mirroring
+  the Marten side):
+
+  ** `APP_URL` ← `environments.<env>.app_url`
+  ** `UNIX_SOCKET` ← `/tmp/.<app>--<env>.sock`
+
+=== Documentation
+
+* `Init.kemal_auto_vars(app_url, socket_path)` extracted as a pure
+  public method with 2 new specs.
+
 == v0.1.8 — 2026-04-30
 
 === Changed
