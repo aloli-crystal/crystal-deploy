@@ -11,6 +11,9 @@ init:
   confirm_send: "Confirm and send to server?"
   required_empty: "This field is required."
   auto_injected: "Automatically injected variables"
+  ask_keep_required: "Do you want to re-enter the required variables?"
+  kept_required: "Required variables kept as-is."
+  restart_dialog: "Restarting the dialogue."
 
 db:
   section: "Database"

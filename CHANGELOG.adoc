@@ -3,6 +3,31 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.7 — 2026-04-30
+
+=== Fixed
+
+* **`init` summary: SMTP_PASS now masked.** Secret detection covered
+  `password` but not bare `pass`, so `SMTP_PASS` was printed in clear
+  at the summary stage. The `pass` pattern is now recognised, on top
+  of `key`, `secret`, `token`. `STRIPE_PUBLISHABLE_KEY` keeps its
+  explicit exception (it's public).
+
+=== Changed
+
+* **`init` no longer quits when the user refuses to send.** Replying
+  "no" to *Confirm and send to server?* used to trigger a hard
+  `exit 0`. The dialogue now loops back to the input + summary stage,
+  letting the operator fix a value without restarting from scratch.
+  `Ctrl-C` is still available to abort.
+* **`init` shortcut on re-init.** When a remote configuration already
+  exists and every required variable is already set on the server,
+  the user is first asked *Do you want to re-enter the required
+  variables? [y/N]*. Default No → all current values are preserved
+  without prompting; only variables missing from the server get
+  asked. Yes → unchanged v0.1.5 behaviour (per-variable prompt with
+  "Enter = keep current").
+
 == v0.1.6 — 2026-04-30
 
 === Fixed

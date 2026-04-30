@@ -36,18 +36,31 @@ module Deploy
           puts ""
         end
 
-        env_values, pg_vars = build_env_interactive(existing_remote_env)
+        # Boucle dialogue → récap → confirmation. Si l'utilisateur refuse
+        # l'envoi à l'étape récap, on relance le dialogue pour qu'il puisse
+        # corriger les valeurs au lieu de quitter brutalement.
+        env_values = pg_vars = nil
+        loop do
+          env_values, pg_vars = build_env_interactive(existing_remote_env)
+          puts ""
+          log_section I18n.t("init.summary")
+          print_summary(env_values)
+          puts ""
+          break if confirm?(I18n.t("init.confirm_send"))
+          log_warn I18n.t("init.restart_dialog")
+          puts ""
+        end
 
         runner = SSH::RemoteRunner.new(
           client: ssh,
           config: @config,
           env: @env,
           command: "init",
-          env_b64: Base64.strict_encode(build_env_content(env_values)),
-          pg_user_b64: Base64.strict_encode(pg_vars.fetch("DB_USER", "")),
-          pg_pass_b64: Base64.strict_encode(pg_vars.fetch("DB_PASSWORD", "")),
-          pg_db_b64: Base64.strict_encode(pg_vars.fetch("DB_NAME", "")),
-          pg_host_b64: Base64.strict_encode(pg_vars.fetch("DB_HOST", ""))
+          env_b64: Base64.strict_encode(build_env_content(env_values.not_nil!)),
+          pg_user_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_USER", "")),
+          pg_pass_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_PASSWORD", "")),
+          pg_db_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_NAME", "")),
+          pg_host_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_HOST", ""))
         )
         runner.run
       end
@@ -75,8 +88,27 @@ module Deploy
         # ── 2. Variables obligatoires ─────────────────────────────────────────
         log_section I18n.t("init.section_required")
         puts ""
-        rules.required.each do |var_def|
-          ask_required_var(var_def, env_values, existing[var_def.key]?)
+
+        has_existing_required = rules.required.any? do |v|
+          val = existing[v.key]?
+          !val.nil? && !val.empty?
+        end
+
+        if has_existing_required && !confirm_no?(I18n.t("init.ask_keep_required"))
+          # Conserver toutes les variables obligatoires déjà définies, ne demander
+          # que celles absentes du serveur.
+          rules.required.each do |var_def|
+            if (val = existing[var_def.key]?) && !val.empty?
+              env_values[var_def.key] = val
+            else
+              ask_required_var(var_def, env_values, nil)
+            end
+          end
+          log_info I18n.t("init.kept_required")
+        else
+          rules.required.each do |var_def|
+            ask_required_var(var_def, env_values, existing[var_def.key]?)
+          end
         end
         puts ""
 
@@ -92,16 +124,8 @@ module Deploy
           ask_optional_vars(rules, env_values)
         end
 
-        # ── 5. Récapitulatif ──────────────────────────────────────────────────
-        puts ""
-        log_section I18n.t("init.summary")
-        print_summary(env_values)
-        puts ""
-
-        unless confirm?(I18n.t("init.confirm_send"))
-          log_warn "Annulé."
-          exit 0
-        end
+        # Récap + confirmation : déplacés dans run() pour permettre la
+        # reprise du dialogue si l'utilisateur refuse l'envoi.
 
         {env_values, pg_vars}
       end
@@ -184,7 +208,7 @@ module Deploy
           next if sep.empty? || key.strip.empty?
           value = value.strip
           if value.size >= 2 && ((value.starts_with?('"') && value.ends_with?('"')) ||
-                                 (value.starts_with?('\'') && value.ends_with?('\'')))
+             (value.starts_with?('\'') && value.ends_with?('\'')))
             value = value[1...-1]
           end
           result[key.strip] = value
@@ -239,13 +263,22 @@ module Deploy
       private def print_summary(env_values : Hash(String, String)) : Nil
         env_values.each do |k, v|
           next if v.empty?
-          is_secret = k.downcase.includes?("secret") ||
-                      k.downcase.includes?("password") ||
-                      k.downcase.includes?("token") ||
-                      (k.downcase.includes?("key") && !k.starts_with?("STRIPE_PUBLISHABLE"))
-          display = is_secret ? "***" : v
+          display = Init.secret_key?(k) ? "***" : v
           printf "  %-30s : %s\n", k, display
         end
+      end
+
+      # Détecte les noms de variable qui contiennent un secret (mot de passe,
+      # token, clé), pour masquer leur valeur au récapitulatif.
+      # Public pour permettre les tests unitaires.
+      def self.secret_key?(name : String) : Bool
+        lower = name.downcase
+        return false if name.starts_with?("STRIPE_PUBLISHABLE")
+        lower.includes?("secret") ||
+          lower.includes?("password") ||
+          lower.includes?("pass") ||
+          lower.includes?("token") ||
+          lower.includes?("key")
       end
 
       # ── Génération de valeurs ──────────────────────────────────────────────

@@ -3,6 +3,32 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.7 — 2026-04-30
+
+=== Corrigé
+
+* **Récapitulatif `init` : SMTP_PASS masqué.** La détection des secrets
+  englobait `password` mais pas `pass` seul ; `SMTP_PASS` était donc
+  affiché en clair au récapitulatif. Le pattern `pass` est désormais
+  reconnu, ainsi que toute occurrence de `key`, `secret`, `token`.
+  Une exception explicite reste pour `STRIPE_PUBLISHABLE_KEY` (publique).
+
+=== Modifié
+
+* **`init` ne quitte plus si l'utilisateur refuse l'envoi.** Auparavant,
+  répondre « non » à *Confirmer et envoyer sur le serveur ?* déclenchait
+  un `exit 0` brut. Le dialogue boucle désormais sur la saisie + récap,
+  permettant de corriger une valeur sans tout recommencer. `Ctrl-C`
+  reste disponible pour abandonner.
+* **`init` : raccourci en re-init.** Lorsqu'une configuration distante
+  existe déjà et que toutes les variables obligatoires sont déjà
+  définies sur le serveur, l'utilisateur reçoit d'abord l'invite
+  *Voulez-vous re-configurer les variables obligatoires ? [o/N]*.
+  Réponse Non (défaut) → toutes les valeurs courantes sont conservées
+  sans nouvelle saisie ; les variables non encore définies sont les
+  seules demandées. Réponse Oui → comportement v0.1.5 inchangé
+  (saisie individuelle avec proposition de conserver chaque valeur).
+
 == v0.1.6 — 2026-04-30
 
 === Corrigé
