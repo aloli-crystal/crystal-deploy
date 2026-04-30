@@ -3,6 +3,28 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.10 — 2026-04-30
+
+=== Changed
+
+* **`n` at the final confirmation no longer aborts init.**
+  Previously, answering `n` to *Confirm and send to server?* would
+  `return` from the dialogue, skipping every remaining server-side
+  step.
+
+  `n` now means: *"don't touch the existing remote `.env`, but the
+  server init continues normally"* (NGINX, bare repo, rc.d, system
+  user, etc.). The SSH runner is invoked with `env_b64=""`; the
+  remote script keeps the existing `.env`.
+
+* **`n` at *re-configure required variables* now propagates intent.**
+  If the user chooses to keep existing required variables, the
+  optional-variables dialogue and the database dialogue are skipped
+  too. Existing DB variables (`DB_USER`, `DB_PASSWORD`, `DB_NAME`,
+  `DB_HOST`) are kept as-is from the remote `.env`. A single `n`
+  at the start is therefore enough to mean "leave everything
+  alone".
+
 == v0.1.9 — 2026-04-30
 
 === Fixed

@@ -15,7 +15,8 @@ init:
   kept_required: "Required variables kept as-is."
   restart_dialog: "Restarting the dialogue."
   cancelled: "Configuration not sent. Dialogue ended."
-  invalid_confirm_choice: "Unknown answer. Type Y (yes, send), n (no, cancel) or r (retry the prompt)."
+  cancelled_keep_env: "The remote .env will be kept as-is. Server-side init (NGINX, bare repo, rc.d, …) continues."
+  invalid_confirm_choice: "Unknown answer. Type Y (yes, send), n (no, keep existing .env), r (retry the prompt)."
 
 db:
   section: "Database"

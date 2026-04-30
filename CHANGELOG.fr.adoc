@@ -3,6 +3,30 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.10 — 2026-04-30
+
+=== Modifié
+
+* **« Non » à la confirmation finale n'arrête plus l'init.**
+  Auparavant, répondre `n` à *Confirmer et envoyer sur le serveur ?*
+  faisait `return` du dialogue : aucune autre étape côté serveur
+  n'était exécutée.
+
+  Le sens de `n` est désormais : *« ne touchez pas au `.env` existant,
+  mais l'init du serveur continue normalement »* (NGINX, dépôt bare,
+  rc.d, user système, etc.). Le runner SSH est appelé avec
+  `env_b64=""` ; le script distant détecte le cas et conserve le
+  `.env` existant.
+
+* **« Non » à *re-configurer les obligatoires* propage l'intention.**
+  Si l'utilisateur choisit de conserver les variables obligatoires
+  existantes, le dialogue *Voulez-vous configurer les variables
+  optionnelles depuis .env.example ?* et le dialogue base de
+  données ne sont plus posés non plus. Les variables DB existantes
+  (`DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST`) sont reprises
+  telles quelles depuis le `.env` distant. Un seul Non en début
+  suffit donc à signaler « je ne touche à rien ».
+
 == v0.1.9 — 2026-04-30
 
 === Corrigé

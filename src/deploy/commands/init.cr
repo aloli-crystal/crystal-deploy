@@ -37,7 +37,12 @@ module Deploy
         end
 
         # Boucle dialogue → récap → confirmation tripartite Oui / Non / Retry.
+        # :send   → envoie les nouvelles valeurs .env + reste de l'init.
+        # :cancel → ne touche pas au .env distant, mais l'init continue
+        #           (NGINX, dépôt bare, rc.d, etc.).
+        # :retry  → reprend la saisie depuis le début.
         env_values = pg_vars = nil
+        send_env = true
         loop do
           env_values, pg_vars = build_env_interactive(existing_remote_env)
           puts ""
@@ -47,10 +52,12 @@ module Deploy
 
           case prompt_confirm_send
           when :send
+            send_env = true
             break
           when :cancel
-            log_info I18n.t("init.cancelled")
-            return
+            send_env = false
+            log_info I18n.t("init.cancelled_keep_env")
+            break
           when :retry
             log_warn I18n.t("init.restart_dialog")
             puts ""
@@ -62,7 +69,7 @@ module Deploy
           config: @config,
           env: @env,
           command: "init",
-          env_b64: Base64.strict_encode(build_env_content(env_values.not_nil!)),
+          env_b64: send_env ? Base64.strict_encode(build_env_content(env_values.not_nil!)) : "",
           pg_user_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_USER", "")),
           pg_pass_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_PASSWORD", "")),
           pg_db_b64: Base64.strict_encode(pg_vars.not_nil!.fetch("DB_NAME", "")),
@@ -104,6 +111,12 @@ module Deploy
           !val.nil? && !val.empty?
         end
 
+        # Drapeau positionné si l'utilisateur a explicitement choisi de
+        # conserver les valeurs existantes : dans ce cas on saute aussi le
+        # dialogue base de données et le dialogue des variables optionnelles
+        # — l'utilisateur a clairement signalé "je ne touche à rien".
+        keep_all_existing = false
+
         if has_existing_required && !confirm_no?(I18n.t("init.ask_keep_required"))
           # Conserver toutes les variables obligatoires déjà définies, ne demander
           # que celles absentes du serveur.
@@ -115,6 +128,7 @@ module Deploy
             end
           end
           log_info I18n.t("init.kept_required")
+          keep_all_existing = true
         else
           rules.required.each do |var_def|
             ask_required_var(var_def, env_values, existing[var_def.key]?)
@@ -123,15 +137,29 @@ module Deploy
         puts ""
 
         # ── 3. Base de données ────────────────────────────────────────────────
-        db_adapter = DB::Factory.for(@config.database, @config, @env)
-        pg_vars = db_adapter.run_dialog
-        env_values.merge!(pg_vars)
-        puts ""
+        if keep_all_existing
+          # Re-injecter les variables DB existantes sans relancer le dialogue.
+          pg_vars = {} of String => String
+          %w[DB_USER DB_PASSWORD DB_NAME DB_HOST].each do |k|
+            if (val = existing[k]?) && !val.empty?
+              pg_vars[k] = val
+              env_values[k] = val
+            end
+          end
+        else
+          db_adapter = DB::Factory.for(@config.database, @config, @env)
+          pg_vars = db_adapter.run_dialog
+          env_values.merge!(pg_vars)
+          puts ""
+        end
 
         # ── 4. Variables optionnelles depuis .env.example ─────────────────────
-        if confirm_no?(I18n.t("init.ask_optional"))
-          puts ""
-          ask_optional_vars(rules, env_values)
+        # Skippées si l'utilisateur a choisi de tout conserver.
+        unless keep_all_existing
+          if confirm_no?(I18n.t("init.ask_optional"))
+            puts ""
+            ask_optional_vars(rules, env_values)
+          end
         end
 
         # Récap + confirmation : déplacés dans run() pour permettre la

@@ -15,7 +15,8 @@ init:
   kept_required: "Variables obligatoires conservées telles quelles."
   restart_dialog: "Reprise du dialogue de saisie."
   cancelled: "Configuration non envoyée. Le dialogue est terminé."
-  invalid_confirm_choice: "Réponse non reconnue. Tapez O (oui, envoyer), n (non, annuler) ou r (reprendre la saisie)."
+  cancelled_keep_env: "Le .env distant existant sera conservé tel quel. L'init côté serveur (NGINX, dépôt bare, rc.d, …) continue."
+  invalid_confirm_choice: "Réponse non reconnue. Tapez O (oui, envoyer), n (non, conserver le .env existant), r (reprendre la saisie)."
 
 db:
   section: "Base de données"
