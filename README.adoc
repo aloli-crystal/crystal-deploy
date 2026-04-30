@@ -37,11 +37,11 @@ Add the shard to your `shard.yml`:
 dependencies:
   deploy:
     github: aloli-crystal/deploy
-    branch: main
+    version: "~> 0.1"
 
 targets:
   deploy:
-    main: lib/deploy/src/deploy.cr
+    main: lib/deploy/src/cli.cr
 ----
 
 Then compile the `deploy` binary:
