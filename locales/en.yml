@@ -14,6 +14,8 @@ init:
   ask_keep_required: "Do you want to re-enter the required variables?"
   kept_required: "Required variables kept as-is."
   restart_dialog: "Restarting the dialogue."
+  cancelled: "Configuration not sent. Dialogue ended."
+  invalid_confirm_choice: "Unknown answer. Type Y (yes, send), n (no, cancel) or r (retry the prompt)."
 
 db:
   section: "Database"

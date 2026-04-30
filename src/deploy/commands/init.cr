@@ -36,9 +36,7 @@ module Deploy
           puts ""
         end
 
-        # Boucle dialogue → récap → confirmation. Si l'utilisateur refuse
-        # l'envoi à l'étape récap, on relance le dialogue pour qu'il puisse
-        # corriger les valeurs au lieu de quitter brutalement.
+        # Boucle dialogue → récap → confirmation tripartite Oui / Non / Retry.
         env_values = pg_vars = nil
         loop do
           env_values, pg_vars = build_env_interactive(existing_remote_env)
@@ -46,9 +44,17 @@ module Deploy
           log_section I18n.t("init.summary")
           print_summary(env_values)
           puts ""
-          break if confirm?(I18n.t("init.confirm_send"))
-          log_warn I18n.t("init.restart_dialog")
-          puts ""
+
+          case prompt_confirm_send
+          when :send
+            break
+          when :cancel
+            log_info I18n.t("init.cancelled")
+            return
+          when :retry
+            log_warn I18n.t("init.restart_dialog")
+            puts ""
+          end
         end
 
         runner = SSH::RemoteRunner.new(
@@ -265,6 +271,30 @@ module Deploy
           next if v.empty?
           display = Init.secret_key?(k) ? "***" : v
           printf "  %-30s : %s\n", k, display
+        end
+      end
+
+      # Demande à l'utilisateur s'il veut envoyer la configuration sur le
+      # serveur. Retourne :send / :cancel / :retry. Boucle tant que la
+      # saisie n'est pas reconnue.
+      private def prompt_confirm_send : Symbol
+        loop do
+          answer = ask("#{I18n.t("init.confirm_send")} [O/n/r] : ")
+          if (choice = Init.parse_confirm_choice(answer))
+            return choice
+          end
+          log_warn I18n.t("init.invalid_confirm_choice")
+        end
+      end
+
+      # Parser pur du choix utilisateur (testable sans I/O).
+      # Convention : Entrée = O = envoyer, n = annuler, r = reprendre.
+      def self.parse_confirm_choice(input : String) : Symbol?
+        case input.strip.downcase
+        when "", "o", "oui", "y", "yes"      then :send
+        when "n", "non", "no"                then :cancel
+        when "r", "retry", "reprendre", "re" then :retry
+        else                                      nil
         end
       end
 

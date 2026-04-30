@@ -14,6 +14,8 @@ init:
   ask_keep_required: "Voulez-vous re-configurer les variables obligatoires ?"
   kept_required: "Variables obligatoires conservées telles quelles."
   restart_dialog: "Reprise du dialogue de saisie."
+  cancelled: "Configuration non envoyée. Le dialogue est terminé."
+  invalid_confirm_choice: "Réponse non reconnue. Tapez O (oui, envoyer), n (non, annuler) ou r (reprendre la saisie)."
 
 db:
   section: "Base de données"

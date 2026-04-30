@@ -3,6 +3,27 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.8 — 2026-04-30
+
+=== Modifié
+
+* **Confirmation `init` tripartite : O / n / r.** L'invite finale
+  *Confirmer et envoyer sur le serveur ?* propose désormais trois
+  réponses :
+** *O* (défaut, Entrée) → envoie la configuration sur le serveur.
+** *n* → annule l'envoi et termine proprement le dialogue
+   (return 0, aucune erreur), sans rejouer la saisie.
+** *r* → reprend la saisie depuis le début pour corriger une valeur.
++
+Affine le comportement v0.1.7 où *n* relançait toujours le dialogue.
+Une saisie inconnue affiche un message d'aide et redemande.
+
+=== Documentation
+
+* `Init.parse_confirm_choice` extrait en méthode publique pure et
+  testée (5 nouveaux specs : variantes oui / non / retry, Entrée par
+  défaut, entrée non reconnue → nil).
+
 == v0.1.7 — 2026-04-30
 
 === Corrigé

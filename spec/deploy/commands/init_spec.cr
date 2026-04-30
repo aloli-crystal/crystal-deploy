@@ -26,4 +26,34 @@ describe Deploy::Commands::Init do
       Deploy::Commands::Init.secret_key?("STRIPE_PUBLISHABLE_KEY").should be_false
     end
   end
+
+  describe ".parse_confirm_choice" do
+    it "Entrée seule = :send (défaut envoi)" do
+      Deploy::Commands::Init.parse_confirm_choice("").should eq :send
+    end
+
+    it "accepte les variantes oui (O, o, oui, y, yes)" do
+      ["O", "o", "Oui", "OUI", "y", "yes", "YES", " o "].each do |s|
+        Deploy::Commands::Init.parse_confirm_choice(s).should eq :send
+      end
+    end
+
+    it "accepte les variantes non (n, non, no)" do
+      ["n", "N", "non", "Non", "no", "NO"].each do |s|
+        Deploy::Commands::Init.parse_confirm_choice(s).should eq :cancel
+      end
+    end
+
+    it "accepte les variantes retry (r, re, retry, reprendre)" do
+      ["r", "R", "re", "retry", "RETRY", "reprendre"].each do |s|
+        Deploy::Commands::Init.parse_confirm_choice(s).should eq :retry
+      end
+    end
+
+    it "renvoie nil pour une entrée non reconnue" do
+      Deploy::Commands::Init.parse_confirm_choice("?").should be_nil
+      Deploy::Commands::Init.parse_confirm_choice("foo").should be_nil
+      Deploy::Commands::Init.parse_confirm_choice("123").should be_nil
+    end
+  end
 end

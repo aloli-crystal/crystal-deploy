@@ -3,6 +3,26 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.8 — 2026-04-30
+
+=== Changed
+
+* **Three-way confirmation in `init`: Y / n / r.** The final prompt
+  *Confirm and send to server?* now offers three answers:
+** *Y* (default, Enter) → send the configuration to the server.
+** *n* → cancel the send and end the dialogue cleanly (`return 0`,
+   no error), no replay.
+** *r* → restart the prompt from scratch to fix a value.
++
+Refines the v0.1.7 behaviour where *n* always restarted the dialogue.
+Unknown answers print a hint and re-ask.
+
+=== Documentation
+
+* `Init.parse_confirm_choice` extracted as a pure public method with
+  5 new specs (yes / no / retry variants, Enter default, unknown
+  input → nil).
+
 == v0.1.7 — 2026-04-30
 
 === Fixed
