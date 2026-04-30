@@ -296,17 +296,29 @@ module Deploy
 
         init_env() {
           log_section "Fichier de configuration .env"
-          if [ -f "${SHARED_DIR}/.env" ]; then
+          # Sémantique :
+          # - ENV_B64 non vide → l'utilisateur a saisi/confirmé un .env :
+          #   on l'écrit (en sauvegardant l'ancien si présent) — c'est le
+          #   seul moyen pour les variables auto-injectées (APP_URL,
+          #   UNIX_SOCKET, MARTEN_*) d'arriver sur le serveur.
+          # - ENV_B64 vide → l'utilisateur a refusé l'envoi : on conserve
+          #   le .env existant tel quel.
+          if [ -n "${ENV_B64}" ]; then
+            if [ -f "${SHARED_DIR}/.env" ]; then
+              BACKUP="${SHARED_DIR}/.env.$(date +%Y%m%d-%H%M%S).bak"
+              sudo cp "${SHARED_DIR}/.env" "${BACKUP}"
+              sudo chmod 600 "${BACKUP}"
+              sudo chown "${APP_USER}:${APP_GROUP}" "${BACKUP}"
+              log_info "Sauvegarde du .env existant : ${BACKUP}"
+            fi
+            printf '%s' "${ENV_B64}" | base64 -d | sudo tee "${SHARED_DIR}/.env" >/dev/null
+            sudo chmod 640 "${SHARED_DIR}/.env"
+            sudo chown "${APP_USER}:${APP_GROUP}" "${SHARED_DIR}/.env"
+            log_info "Fichier .env écrit."
+          elif [ -f "${SHARED_DIR}/.env" ]; then
             log_info "Fichier .env déjà présent : conservé tel quel."
           else
-            if [ -n "${ENV_B64}" ]; then
-              printf '%s' "${ENV_B64}" | base64 -d | sudo tee "${SHARED_DIR}/.env" >/dev/null
-              sudo chmod 640 "${SHARED_DIR}/.env"
-              sudo chown "${APP_USER}:${APP_GROUP}" "${SHARED_DIR}/.env"
-              log_info "Fichier .env écrit."
-            else
-              log_warn "Aucun contenu .env transmis. Relancez init depuis votre terminal."
-            fi
+            log_warn "Aucun .env présent et aucun contenu transmis. Relancez init depuis votre terminal."
           fi
         }
 

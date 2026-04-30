@@ -3,6 +3,28 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.11 — 2026-04-30
+
+=== Corrigé
+
+* **`init_env` : le `.env` distant est désormais réécrit quand un
+  nouveau contenu est transmis.** Auparavant, dès qu'un `.env`
+  existait sur le serveur, `init_env` affichait *« conservé tel
+  quel »* sans tenir compte du `ENV_B64` reçu. Conséquence : les
+  variables auto-injectées par `init` côté Crystal (`APP_URL`,
+  `UNIX_SOCKET`, `MARTEN_*`) n'arrivaient jamais sur le serveur, et
+  NGINX continuait à utiliser le placeholder
+  `<app>--<env>.example.app`.
+
+  Nouvelle sémantique :
+
+  ** `ENV_B64` non vide → on écrit le `.env` (avec sauvegarde de
+     l'ancien : `~/<app>/shared/.env.YYYYMMDD-HHMMSS.bak`).
+  ** `ENV_B64` vide *et* `.env` présent → conservé tel quel
+     (cas du « Non » introduit en v0.1.10).
+  ** `ENV_B64` vide *et* `.env` absent → avertissement clair
+     « relancez init depuis votre terminal ».
+
 == v0.1.10 — 2026-04-30
 
 === Modifié

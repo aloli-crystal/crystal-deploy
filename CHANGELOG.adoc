@@ -3,6 +3,27 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.11 — 2026-04-30
+
+=== Fixed
+
+* **`init_env`: remote `.env` is now rewritten when a new payload is
+  sent.** Before, as soon as a `.env` existed on the server,
+  `init_env` printed *"kept as-is"* and ignored the incoming
+  `ENV_B64`. Effect: variables auto-injected by `init` on the Crystal
+  side (`APP_URL`, `UNIX_SOCKET`, `MARTEN_*`) never reached the
+  server, and NGINX kept using the placeholder
+  `<app>--<env>.example.app`.
+
+  New semantics:
+
+  ** `ENV_B64` non-empty → write the `.env` (after backing the old
+     one up at `~/<app>/shared/.env.YYYYMMDD-HHMMSS.bak`).
+  ** `ENV_B64` empty *and* `.env` present → kept as-is (the "No"
+     path added in v0.1.10).
+  ** `ENV_B64` empty *and* `.env` missing → clear warning "rerun
+     init from your terminal".
+
 == v0.1.10 — 2026-04-30
 
 === Changed
