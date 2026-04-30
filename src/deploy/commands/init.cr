@@ -30,7 +30,13 @@ module Deploy
           dns.try(&.setup)
         end
 
-        env_values, pg_vars = build_env_interactive
+        existing_remote_env = read_existing_remote_env(ssh)
+        unless existing_remote_env.empty?
+          log_info "Configuration existante détectée sur #{@env.host} (#{existing_remote_env.size} variables) — Entrée pour conserver chaque valeur."
+          puts ""
+        end
+
+        env_values, pg_vars = build_env_interactive(existing_remote_env)
 
         runner = SSH::RemoteRunner.new(
           client: ssh,
@@ -48,7 +54,7 @@ module Deploy
 
       # ── Dialogue interactif ─────────────────────────────────────────────────
 
-      private def build_env_interactive : {Hash(String, String), Hash(String, String)}
+      private def build_env_interactive(existing : Hash(String, String) = {} of String => String) : {Hash(String, String), Hash(String, String)}
         log_section I18n.t("init.section_env")
         puts ""
         puts I18n.t("init.intro", env: @env.name)
@@ -70,7 +76,7 @@ module Deploy
         log_section I18n.t("init.section_required")
         puts ""
         rules.required.each do |var_def|
-          ask_required_var(var_def, env_values)
+          ask_required_var(var_def, env_values, existing[var_def.key]?)
         end
         puts ""
 
@@ -124,12 +130,22 @@ module Deploy
 
       # ── Variable obligatoire ───────────────────────────────────────────────
 
-      private def ask_required_var(var_def : EnvVarDef, env_values : Hash(String, String)) : Nil
-        hint = var_def.generate ? " (auto-généré si vide)" : ""
+      private def ask_required_var(var_def : EnvVarDef, env_values : Hash(String, String), current_value : String? = nil) : Nil
+        has_existing = !current_value.nil? && !current_value.not_nil!.empty?
+        hint_parts = [] of String
+        hint_parts << "auto-généré si vide" if var_def.generate
+        hint_parts << "Entrée = conserver l'actuel" if has_existing
+        hint = hint_parts.empty? ? "" : " (#{hint_parts.join(", ")})"
         label = "#{var_def.key}#{hint} : "
 
         loop do
           value = ask(label)
+
+          if value.empty? && has_existing
+            env_values[var_def.key] = current_value.not_nil!
+            log_info "  → valeur existante conservée pour #{var_def.key}"
+            break
+          end
 
           if value.empty? && var_def.generate
             value = generate_value(var_def.key, var_def.generate.not_nil!)
@@ -144,6 +160,36 @@ module Deploy
           env_values[var_def.key] = value
           break
         end
+      end
+
+      # Lit le `.env` distant si init a déjà été lancé sur cet environnement.
+      # Retourne un hash vide en cas d'absence ou d'erreur de lecture.
+      private def read_existing_remote_env(ssh : SSH::Client) : Hash(String, String)
+        app_home = @env.app_home(@config.app_name)
+        content = ssh.read_remote("#{app_home}/shared/.env")
+        content ? parse_env_file(content) : {} of String => String
+      rescue
+        {} of String => String
+      end
+
+      # Parser .env minimaliste : KEY=VALUE, ignore commentaires et lignes
+      # vides, retire les guillemets simples ou doubles autour des valeurs.
+      private def parse_env_file(content : String) : Hash(String, String)
+        result = {} of String => String
+        content.each_line do |raw|
+          line = raw.strip
+          next if line.empty? || line.starts_with?("#")
+          line = line.lchop("export ").lstrip if line.starts_with?("export ")
+          key, sep, value = line.partition("=")
+          next if sep.empty? || key.strip.empty?
+          value = value.strip
+          if value.size >= 2 && ((value.starts_with?('"') && value.ends_with?('"')) ||
+                                 (value.starts_with?('\'') && value.ends_with?('\'')))
+            value = value[1...-1]
+          end
+          result[key.strip] = value
+        end
+        result
       end
 
       # ── Variables optionnelles depuis .env.example ─────────────────────────

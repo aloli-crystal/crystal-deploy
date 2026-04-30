@@ -3,6 +3,23 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.5 — 2026-04-30
+
+=== Added
+
+* **`init` preserves already-defined variables.** Before the prompt,
+  `init` reads `~/<app>/shared/.env` from the server. For each required
+  variable, the prompt now displays `(Enter = keep current)` whenever a
+  value already exists; pressing Enter keeps the current value. Avoids
+  re-typing SMTP password, SECRET_KEY, etc. on every re-init.
+
+=== Fixed
+
+* **README** : `shard.yml` integration example corrected (entry point
+  `lib/deploy/src/cli.cr` instead of `lib/deploy/src/deploy.cr` which
+  produced a silent binary, and `version: "~> 0.1"` pin instead of
+  `branch: main` which does not exist).
+
 == v0.1.4 — 2026-04-29
 
 === Changed

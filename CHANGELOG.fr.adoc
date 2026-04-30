@@ -3,6 +3,24 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.5 — 2026-04-30
+
+=== Ajouté
+
+* **`init` préserve les variables déjà saisies.** Avant le dialogue,
+  `init` lit `~/<app>/shared/.env` sur le serveur. Pour chaque variable
+  obligatoire, l'invite affiche désormais `(Entrée = conserver l'actuel)`
+  quand une valeur existe déjà ; taper Entrée garde la valeur courante.
+  Évite de re-saisir mot de passe SMTP, SECRET_KEY, etc. à chaque
+  re-init.
+
+=== Corrigé
+
+* **README** : exemple d'intégration `shard.yml` corrigé (point d'entrée
+  `lib/deploy/src/cli.cr` au lieu de `lib/deploy/src/deploy.cr` qui
+  produisait un binaire muet, et pinning `version: "~> 0.1"` au lieu de
+  `branch: main` qui n'existe pas).
+
 == v0.1.4 — 2026-04-29
 
 === Modifié
