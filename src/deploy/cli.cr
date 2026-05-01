@@ -5,9 +5,13 @@ module Deploy
     USAGE = <<-USAGE
       Usage : deploy [commande] [--<env>]
 
+      Sans commande, `deploy` est implicite — invocation la plus courte :
+        deploy                       # déploie sur la branche git courante
+        deploy --production          # déploie sur l'env production
+
       Commandes :
         init        Initialisation du serveur (une seule fois, idempotente)
-        deploy      Déploiement d'une nouvelle release (défaut)
+        deploy      Déploiement d'une nouvelle release (défaut implicite)
         rollback    Retour à la release précédente
         status      Afficher la version active et les releases disponibles
         generate-ci Générer le workflow GitHub Actions (.github/workflows/deploy.yml)
@@ -33,34 +37,49 @@ module Deploy
             production: ...
 
       Exemples :
-        deploy dns-setup --developpement    # configurer les clés DNS
-        deploy generate-ci                  # générer le workflow GitHub Actions
+        deploy                              # deploy implicite, env = branche courante
+        deploy --production                 # deploy explicite sur --production
         deploy init --developpement
-        deploy deploy --production
         deploy rollback --prod
         deploy status --prep
+        deploy dns-setup --developpement    # configurer les clés DNS
+        deploy generate-ci                  # générer le workflow GitHub Actions
       USAGE
 
     def self.run(args : Array(String))
       new.run(args)
     end
 
+    # Résout la commande à exécuter à partir des arguments bruts CLI.
+    # Renvoie le premier argument qui ne commence pas par `-` ; sinon
+    # `"deploy"` (commande par défaut, déclarée dans USAGE). Méthode
+    # pure et publique pour permettre les tests unitaires.
+    def self.resolve_command(args : Array(String)) : String
+      args.find { |arg| !arg.starts_with?("-") } || "deploy"
+    end
+
     DEPLOY_YML_EXAMPLE = {{ read_file("#{__DIR__}/../../examples/marten/config/deploy.yml") }}
 
     def run(args : Array(String))
-      if args.empty?
-        puts USAGE
-        generate_deploy_yml_example
-        exit 0
-      end
-
       if args.includes?("--help") || args.includes?("-h")
         puts USAGE
         exit 0
       end
 
+      # Sans config/deploy.yml local on n'a rien à déployer : on imprime
+      # l'aide et on génère un gabarit pour amorcer un nouveau projet.
+      # Toute autre invocation tombe sur la commande `deploy` par défaut
+      # (cf. ligne `command = ... || "deploy"` plus bas), avec
+      # auto-détection de l'environnement depuis la branche git courante
+      # si `--<env>` n'est pas fourni.
+      unless File.exists?("config/deploy.yml")
+        puts USAGE
+        generate_deploy_yml_example
+        exit 0
+      end
+
       # Commande generate-ci : sans environnement
-      if args.first == "generate-ci"
+      if args.first? == "generate-ci"
         config = Config.load
         Commands::GenerateCI.new(config).run
         exit 0
@@ -78,7 +97,7 @@ module Deploy
       env = resolve_environment(config, env_name)
 
       # Commande dns-setup : configure les clés du registrar DNS
-      if args.first == "dns-setup"
+      if args.first? == "dns-setup"
         registrar = config.dns_registrar
         unless registrar
           log_warn "Aucun registrar DNS configuré dans config/deploy.yml (champ dns.registrar)."
@@ -100,8 +119,8 @@ module Deploy
         exit 0
       end
 
-      # Commande principale
-      command = args.find { |arg| !arg.starts_with?("-") } || "deploy"
+      # Commande principale (cf. CLI.resolve_command).
+      command = CLI.resolve_command(args)
 
       case command
       when "init"

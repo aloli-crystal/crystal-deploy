@@ -3,6 +3,30 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.12 — 2026-05-01
+
+=== Changed
+
+* **`deploy` is now the implicit default command.** Invoking the
+  binary without a command name is equivalent to `deploy`:
++
+  * `bin/deploy` → deploys to the current git branch's environment
+    (auto-detection).
+  * `bin/deploy --production` → deploys to `--production`.
++
+Previously, an empty invocation just printed the help message.
+Help is now printed only when `config/deploy.yml` does not exist
+in the current directory (new-project bootstrap path) or when
+`--help` / `-h` is explicitly passed. The `config/deploy.yml`
+template is still generated in that case.
+
+=== Documentation
+
+* `Deploy::CLI.resolve_command(args)` extracted as a pure public
+  method with 4 new specs covering the possible variants.
+* USAGE refreshed: dedicated paragraph for the default case,
+  examples reordered (shortest form first).
+
 == v0.1.11 — 2026-04-30
 
 === Fixed

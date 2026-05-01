@@ -3,6 +3,30 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.12 — 2026-05-01
+
+=== Modifié
+
+* **`deploy` est désormais la commande par défaut implicite.** Une
+  invocation sans nom de commande équivaut à `deploy` :
++
+  * `bin/deploy` → déploie sur l'environnement de la branche git
+    courante (auto-détection).
+  * `bin/deploy --production` → déploie sur `--production`.
++
+Auparavant, l'invocation sans argument se contentait d'imprimer
+l'aide. Désormais, l'aide n'est imprimée que si `config/deploy.yml`
+n'existe pas dans le répertoire courant (cas du bootstrap d'un
+nouveau projet) ou si `--help` / `-h` est explicitement passé. Le
+gabarit `config/deploy.yml` continue d'être généré dans ce cas.
+
+=== Documentation
+
+* `Deploy::CLI.resolve_command(args)` extrait en méthode publique
+  pure et testée (4 nouveaux specs sur les variantes possibles).
+* USAGE rafraîchie : section dédiée au cas par défaut, ordre des
+  exemples revu (cas court d'abord).
+
 == v0.1.11 — 2026-04-30
 
 === Corrigé
