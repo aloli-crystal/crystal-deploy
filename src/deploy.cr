@@ -27,5 +27,8 @@ require "./deploy/commands/generate_ci"
 require "./deploy/cli"
 
 module Deploy
-  VERSION = "0.1.0"
+  # Version lue à la compilation depuis `shard.yml` — source unique.
+  # Macro Crystal : la commande shell est exécutée au moment du
+  # `crystal build`, et son stdout est embarqué comme String literal.
+  VERSION = {{ `grep -E '^version:' #{__DIR__}/../shard.yml | head -1 | sed 's/version: *//' | tr -d '[:space:]'`.stringify }}
 end

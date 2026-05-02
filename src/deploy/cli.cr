@@ -9,6 +9,10 @@ module Deploy
         deploy                       # déploie sur la branche git courante
         deploy --production          # déploie sur l'env production
 
+      Flags méta (filtrés avant la résolution de commande) :
+        -v, --version                # affiche la version et quitte
+        -h, --help                   # affiche cette aide et quitte
+
       Commandes :
         init        Initialisation du serveur (une seule fois, idempotente)
         deploy      Déploiement d'une nouvelle release (défaut implicite)
@@ -61,6 +65,14 @@ module Deploy
     DEPLOY_YML_EXAMPLE = {{ read_file("#{__DIR__}/../../examples/marten/config/deploy.yml") }}
 
     def run(args : Array(String))
+      # Flags méta — DOIVENT être filtrés AVANT toute logique métier
+      # (notamment avant la résolution de la commande par défaut
+      # `deploy`). Sinon `bin/deploy -v` partait en déploiement…
+      if args.includes?("--version") || args.includes?("-v")
+        puts "deploy v#{Deploy::VERSION}"
+        exit 0
+      end
+
       if args.includes?("--help") || args.includes?("-h")
         puts USAGE
         exit 0

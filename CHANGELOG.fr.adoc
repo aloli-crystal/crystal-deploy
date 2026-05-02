@@ -3,6 +3,25 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.15 — 2026-05-02
+
+=== Corrigé
+
+* **Régression `bin/deploy -v` lançait un déploiement.** Depuis la
+  v0.1.12 (commande `deploy` implicite par défaut), un argument `-v`
+  ou `--version` passé seul était traité comme un flag d'environnement
+  et tombait sur `command = "deploy"` → déploiement non désiré sur
+  la branche courante.
++
+Correction : `--version` / `-v` est désormais filtré au tout début de
+`CLI#run`, AVANT toute logique métier (au même niveau que `--help` /
+`-h`). USAGE mis à jour pour citer explicitement les flags méta.
+
+* **`Deploy::VERSION` désynchronisé.** La constante affichait `0.1.0`
+  alors que `shard.yml` était à `0.1.14`. Désormais lue à la
+  compilation depuis `shard.yml` via macro Crystal `{{ \`grep ...\` }}`
+  → source unique, plus de drift possible.
+
 == v0.1.14 — 2026-05-02
 
 === Ajouté
