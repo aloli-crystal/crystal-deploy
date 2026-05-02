@@ -399,3 +399,42 @@ describe Deploy::SSH::RemoteScript, "flag SEED_ENABLED" do
     content.should contain("Seed désactivé via config/deploy.yml")
   end
 end
+
+describe Deploy::SSH::RemoteScript, "flag OPAL_ENABLED" do
+  it "déclare la variable OPAL_ENABLED parmi les arguments du script" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    content.should contain "OPAL_ENABLED=\"${13:-false}\""
+  end
+
+  it "court-circuite build_opal_assets quand OPAL_ENABLED vaut false" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    content.should contain "[ \"${OPAL_ENABLED}\" != \"true\" ] && return 0"
+  end
+
+  it "appelle bin/build-assets en priorité, fallback sur opal --compile" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    content.should contain "bin/build-assets"
+    content.should contain "opal --compile -Isrc/opal"
+  end
+
+  it "intercale build_opal_assets entre link_shared et shards_prepare" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    # Recherche le bloc deploy (entre 'deploy)' et 'rollback)' ou fin)
+    deploy_pos = content.index("Déploiement [${ENV_NAME}]") || raise "deploy block missing"
+    snippet = content[deploy_pos..(deploy_pos + 500)]
+    # build_opal_assets doit apparaître après link_shared, avant shards_prepare
+    link_pos = snippet.index("link_shared") || raise "link_shared not found"
+    opal_pos = snippet.index("build_opal_assets") || raise "build_opal_assets not found"
+    shards_pos = snippet.index("shards_prepare") || raise "shards_prepare not found"
+    (link_pos < opal_pos).should be_true
+    (opal_pos < shards_pos).should be_true
+  end
+end

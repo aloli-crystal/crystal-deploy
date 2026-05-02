@@ -3,6 +3,30 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.14 — 2026-05-02
+
+=== Added
+
+* **`config/deploy.yml`: `opal_assets: true` compiles Opal at deploy.**
+  Projects following the Aloli Opal convention (sources in `src/opal/`,
+  output in `public/js/app.js`) can now delegate compilation to the
+  shard instead of versioning the generated JS.
++
+[source,yaml]
+----
+opal_assets: true   # default false (backwards-compat)
+----
++
+The shard runs, in the freshly cloned release, `bin/build-assets` if
+present (convention from `aloli/les-amis-de-joseph`), otherwise
+falls back to `OPAL_PREFORK_DISABLE=1 opal --compile -Isrc/opal
+src/opal/application.rb > public/js/app.js`. The step is inserted
+*between `link_shared` and `shards_prepare`* — no dependency on the
+application binary, and the JS is ready before `start_service`.
++
+*Server prerequisite*: `opal` (Ruby gem) installed. Otherwise, an
+explicit error log is printed with the recommended `gem install opal`.
+
 == v0.1.13 — 2026-05-02
 
 === Added

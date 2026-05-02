@@ -59,6 +59,8 @@ module Deploy
         # $6 = CRYSTAL_MAIN, $7 = CRYSTAL_FLAGS, $8 = KEEP_RELEASES
         # $9 = COMMAND, $10 = DATA_FILE (chemin vers le fichier de données), $11 = FRAMEWORK
         # $12 = SEED_ENABLED ("true" / "false") — si "false", run_seed est court-circuité.
+        # $13 = OPAL_ENABLED ("true" / "false") — si "true", build_opal_assets est appelé
+        #       avant compile_start (cf. config/deploy.yml `opal_assets: true`).
         ENV_NAME="${2}"
         APP_NAME="${3}"
         REPO_BRANCH="${4}"
@@ -70,6 +72,7 @@ module Deploy
         DATA_FILE="${10:-}"
         FRAMEWORK="${11:-kemal}"
         SEED_ENABLED="${12:-true}"
+        OPAL_ENABLED="${13:-false}"
 
         # Lire les données sensibles depuis le fichier de données (une valeur par ligne)
         # Cela évite tout problème d'échappement shell avec les caractères spéciaux du Base64
@@ -374,6 +377,46 @@ module Deploy
         # Marten : `bin/marten seed` si la commande est définie dans le projet
         # Kemal  : `./bin/${APP_FULL_NAME} seed` via le binaire applicatif
         # ---------------------------------------------------------------------------
+        # ---------------------------------------------------------------------------
+        # build_opal_assets : compile les sources Opal (Ruby) en JavaScript.
+        # Appelée si `opal_assets: true` dans config/deploy.yml.
+        # Convention `aloli-crystal/*` : sources dans src/opal/, sortie dans
+        # public/js/app.js, script `bin/build-assets` à la racine du projet.
+        # Si `bin/build-assets` est absent : fallback vers la commande
+        # `opal --compile` directe (suppose `opal` gem installé sur le serveur).
+        # ---------------------------------------------------------------------------
+        build_opal_assets() {
+          [ "${OPAL_ENABLED}" != "true" ] && return 0
+          log_section "Compilation Opal (Ruby → JavaScript)"
+          if ! command -v opal >/dev/null 2>&1; then
+            log_error "opal introuvable côté serveur. Installation : gem install opal"
+            log_error "(ou `pkg install rubyXX-opal` selon la distrib)"
+            return 1
+          fi
+          OPAL_OUTDIR="${RELEASE_DIR}/public/js"
+          install -d -o "${APP_USER}" -g "${APP_GROUP}" -m 755 "${OPAL_OUTDIR}"
+          if [ -x "${RELEASE_DIR}/bin/build-assets" ]; then
+            log_info "Exécution de bin/build-assets dans ${RELEASE_DIR}"
+            run_with_env "${APP_USER}" "${RELEASE_DIR}" "./bin/build-assets" || {
+              log_error "bin/build-assets a échoué."
+              return 1
+            }
+          else
+            log_info "bin/build-assets absent — fallback opal --compile direct."
+            OPAL_SRC="${RELEASE_DIR}/src/opal/application.rb"
+            if [ ! -f "${OPAL_SRC}" ]; then
+              log_warn "${OPAL_SRC} introuvable — rien à compiler."
+              return 0
+            fi
+            run_with_env "${APP_USER}" "${RELEASE_DIR}" \
+              "OPAL_PREFORK_DISABLE=1 opal --compile -Isrc/opal src/opal/application.rb > public/js/app.js" || {
+                log_error "Compilation Opal échouée."
+                return 1
+              }
+          fi
+          log_info "Assets Opal compilés."
+        }
+
         run_seed() {
           if [ "${SEED_ENABLED}" = "false" ]; then
             log_info "Seed désactivé via config/deploy.yml (seed: false)."
@@ -1056,6 +1099,10 @@ module Deploy
             DEPLOY_START=$(date +%s)
             clone_repo
             link_shared
+            # Compile les assets Opal AVANT shards/crystal (pas de
+            # dépendance sur le binaire applicatif, et on veut que les
+            # JS soient prêts avant start_service).
+            build_opal_assets
             # Étape 1 (séquentielle, rapide ~15s) :
             #   shards install + shards build marten → bin/marten disponible
             shards_prepare
@@ -1109,6 +1156,10 @@ module Deploy
             log_section "Déploiement [${ENV_NAME}] — ${TIMESTAMP} (framework: ${FRAMEWORK})"
             clone_repo
             link_shared
+            # Compile les assets Opal AVANT shards/crystal (pas de
+            # dépendance sur le binaire applicatif, et on veut que les
+            # JS soient prêts avant start_service).
+            build_opal_assets
             # Étape 1 (séquentielle, rapide ~15s) :
             #   shards install + shards build marten → bin/marten disponible
             shards_prepare

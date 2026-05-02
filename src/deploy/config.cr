@@ -148,6 +148,16 @@ module Deploy
     # de fichiers YAML versionnés).
     property seed : Bool = true
 
+    # Active la compilation Opal (Ruby → JavaScript) au déploiement.
+    # Quand `opal_assets: true`, le shard exécute `bin/build-assets` dans
+    # la release fraîchement clonée (convention `aloli-crystal/*` :
+    # sources dans `src/opal/`, sortie dans `public/js/app.js`).
+    # Si `bin/build-assets` est absent, fallback vers la commande
+    # `opal --compile -Isrc/opal src/opal/application.rb >
+    # public/js/app.js`. Suppose `opal` (gem Ruby) installé sur le
+    # serveur. Défaut `false` pour rétrocompatibilité.
+    property opal_assets : Bool = false
+
     # Configuration DNS (optionnelle)
     property dns : DnsConfig? = nil
 

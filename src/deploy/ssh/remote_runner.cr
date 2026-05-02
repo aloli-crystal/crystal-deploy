@@ -109,9 +109,10 @@ module Deploy
           @config.crystal_flags.try(&.presence) || "-", # "-" si vide pour éviter le décalage d'arguments
           @config.keep_releases.to_s,
           @command,
-          remote_data,                     # $10 : chemin du fichier de données
-          @config.framework,               # $11 : framework (marten | kemal)
-          @config.seed ? "true" : "false", # $12 : seed activé (défaut true)
+          remote_data,                            # $10 : chemin du fichier de données
+          @config.framework,                      # $11 : framework (marten | kemal)
+          @config.seed ? "true" : "false",        # $12 : seed activé (défaut true)
+          @config.opal_assets ? "true" : "false", # $13 : compile Opal (défaut false)
         ]
         # Nettoyage des fichiers distants après exécution
         args.join(" ") + "; rm -f #{remote_script} #{remote_data}"

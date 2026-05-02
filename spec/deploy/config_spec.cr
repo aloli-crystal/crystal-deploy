@@ -220,3 +220,20 @@ describe Deploy::Config, "#seed" do
     config.seed.should be_true
   end
 end
+
+describe Deploy::Config, "#opal_assets" do
+  it "vaut false par défaut" do
+    SpecHelper.kemal_config.opal_assets.should be_false
+    SpecHelper.marten_config.opal_assets.should be_false
+  end
+
+  it "respecte opal_assets: true" do
+    yaml = SpecHelper::KEMAL_YAML + "\nopal_assets: true\n"
+    Deploy::Config.from_yaml(yaml).opal_assets.should be_true
+  end
+
+  it "respecte opal_assets: false explicite" do
+    yaml = SpecHelper::KEMAL_YAML + "\nopal_assets: false\n"
+    Deploy::Config.from_yaml(yaml).opal_assets.should be_false
+  end
+end
