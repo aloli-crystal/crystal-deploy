@@ -382,3 +382,20 @@ describe Deploy::DNS::Ovh, "vérification CNAME" do
     !!(("" =~ /^\[\s*\d/)).should be_falsey
   end
 end
+
+describe Deploy::SSH::RemoteScript, "flag SEED_ENABLED" do
+  it "déclare la variable SEED_ENABLED parmi les arguments du script" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    content.should contain("SEED_ENABLED=\"${12:-true}\"")
+  end
+
+  it "court-circuite run_seed quand SEED_ENABLED vaut false" do
+    config = SpecHelper.kemal_config
+    env = config.environment("developpement")
+    content = Deploy::SSH::RemoteScript.generate(config, env)
+    content.should contain("[ \"${SEED_ENABLED}\" = \"false\" ]")
+    content.should contain("Seed désactivé via config/deploy.yml")
+  end
+end

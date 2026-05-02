@@ -58,6 +58,7 @@ module Deploy
         # $2 = ENV_NAME, $3 = APP_NAME, $4 = BRANCH, $5 = REPO_URL
         # $6 = CRYSTAL_MAIN, $7 = CRYSTAL_FLAGS, $8 = KEEP_RELEASES
         # $9 = COMMAND, $10 = DATA_FILE (chemin vers le fichier de données), $11 = FRAMEWORK
+        # $12 = SEED_ENABLED ("true" / "false") — si "false", run_seed est court-circuité.
         ENV_NAME="${2}"
         APP_NAME="${3}"
         REPO_BRANCH="${4}"
@@ -68,6 +69,7 @@ module Deploy
         COMMAND="${9:-deploy}"
         DATA_FILE="${10:-}"
         FRAMEWORK="${11:-kemal}"
+        SEED_ENABLED="${12:-true}"
 
         # Lire les données sensibles depuis le fichier de données (une valeur par ligne)
         # Cela évite tout problème d'échappement shell avec les caractères spéciaux du Base64
@@ -373,6 +375,10 @@ module Deploy
         # Kemal  : `./bin/${APP_FULL_NAME} seed` via le binaire applicatif
         # ---------------------------------------------------------------------------
         run_seed() {
+          if [ "${SEED_ENABLED}" = "false" ]; then
+            log_info "Seed désactivé via config/deploy.yml (seed: false)."
+            return 0
+          fi
           [ ! -f "${SHARED_DIR}/.env" ] && return 0
           if [ "${FRAMEWORK}" = "marten" ]; then
             # Seed Marten : commande `seed` via bin/marten si définie dans le projet

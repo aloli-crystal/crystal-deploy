@@ -3,6 +3,47 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.13 — 2026-05-02
+
+=== Added
+
+* **`config/deploy.yml`: `seed: false` disables the seed step.**
+  For stateless apps (no database, no bootstrap data), `run_seed` can
+  now be skipped via:
++
+[source,yaml]
+----
+seed: false   # default true (backwards-compat)
+----
++
+The shard forwards the value to the remote script as a new positional
+argument `$12 = SEED_ENABLED`; `run_seed()` short-circuits with
+`return 0` and a log line when the flag is `false`.
+
+=== Fixed
+
+* **Secret leak in service rc.d startup log.** The `_log_env` function
+  of the generated rc.d used `sed` with *basic* regex alternation
+  (`\|`) which does NOT work on BSD sed (FreeBSD, macOS) — `\|` is
+  treated as a literal `|` there. As a result, NO `PASSWORD|SECRET|
+  TOKEN|KEY|PASS` pattern was ever matched, and every value appeared
+  in plain text in the application log at startup.
++
+Fix: `sed -E` (extended regex) with unescaped `|`. The regex now
+works on both BSD and GNU sed. Patterns covered: `PASSWORD`,
+`SECRET`, `TOKEN`, `API_KEY`, `APP_PASSWORD`, `PASS`.
++
+*Recommended action*: rotate any secret that may have been exposed
+in `~/<app>/shared/log/<app>.log` on the server.
+
+=== Changed
+
+* **Better rc.d startup failure diagnostic.** When the pidfile is
+  present but the socket is missing after 15 s (typical case: the app
+  crashed at bind, or doesn't listen on `UNIX_SOCKET`), the rc.d now
+  prints the issue explicitly AND the last 30 lines of the
+  application log. Same treatment when the pidfile stays missing.
+
 == v0.1.12 — 2026-05-01
 
 === Changed

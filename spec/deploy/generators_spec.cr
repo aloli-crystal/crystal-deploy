@@ -118,3 +118,39 @@ describe Deploy::Generators::Rcd do
     content.should contain("REQUIRE=")
   end
 end
+
+describe Deploy::Generators::Rcd, "_log_env" do
+  it "utilise sed -E (extended regex) — alternation portable BSD/GNU" do
+    config, env = sample_config_and_env
+    content = Deploy::Generators::Rcd.new(config, env).generate
+    # Le regex masquant les secrets DOIT utiliser -E pour fonctionner
+    # sur BSD sed (FreeBSD, macOS) où l'alternation `|` n'est pas
+    # supportée par la regex basique (\|).
+    content.should contain("sed -E")
+    # Et l'alternation avec | non échappé (extended) — pas de \|.
+    content.should match(/\(PASSWORD\|SECRET/)
+    content.should_not contain("\\\\|")
+  end
+
+  it "couvre les patterns de secret usuels" do
+    config, env = sample_config_and_env
+    content = Deploy::Generators::Rcd.new(config, env).generate
+    %w[PASSWORD SECRET TOKEN APP_PASSWORD PASS API_KEY].each do |kw|
+      content.should contain(kw)
+    end
+  end
+end
+
+describe Deploy::Generators::Rcd, "diagnostic au démarrage" do
+  it "affiche la queue du log si le pidfile est absent après l'attente" do
+    config, env = sample_config_and_env
+    content = Deploy::Generators::Rcd.new(config, env).generate
+    content.should contain("tail -n 30 \"${mon_app__developpement_log}\"")
+  end
+
+  it "détecte le cas pidfile présent mais socket absent" do
+    config, env = sample_config_and_env
+    content = Deploy::Generators::Rcd.new(config, env).generate
+    content.should contain("le socket ${mon_app__developpement_socket} est absent")
+  end
+end

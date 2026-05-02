@@ -178,10 +178,21 @@ module Deploy
 
             if [ -f "${#{rc_name}_pidfile}" ]; then
                 PID=$(cat "${#{rc_name}_pidfile}")
+                # PID écrit, mais le socket peut encore être absent : avertir
+                # explicitement et afficher la queue du log pour aider au
+                # diagnostic (typiquement : l'app a crashé au bind ou ne lit
+                # pas UNIX_SOCKET, retombe en TCP, …).
+                if [ ! -S "${#{rc_name}_socket}" ]; then
+                    echo "${name} actif (PID: ${PID}) mais le socket ${#{rc_name}_socket} est absent." >&2
+                    echo "Dernières lignes du log applicatif (${#{rc_name}_log}) :" >&2
+                    tail -n 30 "${#{rc_name}_log}" >&2 || true
+                    return 1
+                fi
                 echo "${name} démarré (PID: ${PID})."
             else
                 echo "ERREUR : ${name} n'a pas démarré après ${WAIT}s." >&2
-                echo "Consultez : ${#{rc_name}_log}" >&2
+                echo "Dernières lignes du log applicatif (${#{rc_name}_log}) :" >&2
+                tail -n 30 "${#{rc_name}_log}" >&2 || true
                 return 1
             fi
         }
@@ -238,8 +249,12 @@ module Deploy
             LOG_FILE="${#{rc_name}_log}"
             if [ -f "${ENV_FILE}" ]; then
                 echo "--- .env chargé au démarrage ($(date)) ---" >> "${LOG_FILE}"
+                # IMPORTANT : `sed -E` (extended regex) pour que l'alternation
+                # `|` fonctionne aussi sur BSD sed (FreeBSD, macOS) — le
+                # `\\|` de la regex basique est traité comme un littéral
+                # par BSD sed et ne masquerait JAMAIS les secrets.
                 grep -v '^[[:space:]]*#' "${ENV_FILE}" | grep -v '^[[:space:]]*$' | \\
-                    sed 's/\\(PASSWORD\\|SECRET\\|TOKEN\\|KEY\\|PASS\\)\\([^=]*\\)=.*/\\1\\2=***/' | \\
+                    sed -E 's/(PASSWORD|SECRET|TOKEN|API_KEY|APP_PASSWORD|PASS)([^=]*)=.*/\\1\\2=***/' | \\
                     while IFS= read -r line; do
                         echo "  ${line}" >> "${LOG_FILE}"
                     done

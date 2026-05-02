@@ -140,6 +140,14 @@ module Deploy
     # Base de données : postgresql | sqlite | none
     property database : String = "postgresql"
 
+    # Active/désactive l'étape `seed` au déploiement. Défaut `true` pour
+    # rétrocompatibilité (Marten projects et Kemal projects qui exposent
+    # une commande `seed` en gardent le bénéfice). Mettre à `false` dans
+    # config/deploy.yml pour les projets sans seed (cas typique : app
+    # stateless sans base de données, ou site dont les données viennent
+    # de fichiers YAML versionnés).
+    property seed : Bool = true
+
     # Configuration DNS (optionnelle)
     property dns : DnsConfig? = nil
 

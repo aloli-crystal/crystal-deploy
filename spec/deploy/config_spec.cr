@@ -201,3 +201,22 @@ describe Deploy::Config, "#load_env_example" do
     end
   end
 end
+
+describe Deploy::Config, "#seed" do
+  it "vaut true par défaut quand l'attribut n'est pas dans le YAML" do
+    SpecHelper.marten_config.seed.should be_true
+    SpecHelper.kemal_config.seed.should be_true
+  end
+
+  it "respecte la valeur explicite seed: false" do
+    yaml = SpecHelper::KEMAL_YAML + "\nseed: false\n"
+    config = Deploy::Config.from_yaml(yaml)
+    config.seed.should be_false
+  end
+
+  it "respecte la valeur explicite seed: true" do
+    yaml = SpecHelper::KEMAL_YAML + "\nseed: true\n"
+    config = Deploy::Config.from_yaml(yaml)
+    config.seed.should be_true
+  end
+end
