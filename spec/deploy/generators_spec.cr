@@ -121,25 +121,21 @@ describe Deploy::Generators::Rcd do
   end
 end
 
-describe Deploy::Generators::Rcd, "_log_env" do
-  it "utilise sed -E (extended regex) — alternation portable BSD/GNU" do
+describe Deploy::Generators::Rcd, "logging du .env" do
+  # Depuis 0.1.17, le wrapper rc.d ne dump plus le .env dans le log.
+  # C'est aloli-crystal/load-env (≥ 0.2.0) qui logue le chargement
+  # côté Crystal. Ces tests verrouillent cette suppression : aucune
+  # tentative de masquer/log de secret côté shell.
+  it "ne dump plus le .env (laissé à load-env côté Crystal)" do
     config, env = sample_config_and_env
     content = Deploy::Generators::Rcd.new(config, env).generate
-    # Le regex masquant les secrets DOIT utiliser -E pour fonctionner
-    # sur BSD sed (FreeBSD, macOS) où l'alternation `|` n'est pas
-    # supportée par la regex basique (\|).
-    content.should contain("sed -E")
-    # Et l'alternation avec | non échappé (extended) — pas de \|.
-    content.should match(/\(PASSWORD\|SECRET/)
-    content.should_not contain("\\\\|")
-  end
-
-  it "couvre les patterns de secret usuels" do
-    config, env = sample_config_and_env
-    content = Deploy::Generators::Rcd.new(config, env).generate
-    %w[PASSWORD SECRET TOKEN APP_PASSWORD PASS API_KEY].each do |kw|
-      content.should contain(kw)
-    end
+    # Plus aucune trace de l'ancienne fonction _log_env ni du regex
+    # de masquage des secrets.
+    content.should_not contain("_log_env()")
+    content.should_not contain("sed -E")
+    content.should_not contain(".env chargé au démarrage")
+    # Plus d'appel _log_env dans la fonction de start.
+    content.should_not match(/^\s*_log_env\s*$/m)
   end
 end
 

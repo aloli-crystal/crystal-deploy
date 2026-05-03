@@ -152,8 +152,12 @@ module Deploy
         #{rc_name}_start() {
             echo "Démarrage de ${name}..."
 
-            # Journaliser le .env au démarrage (mots de passe masqués)
-            _log_env
+            # Note : le .env n'est plus dumpé en log par le wrapper rc.d
+            # depuis 0.1.17. C'est `aloli-crystal/load-env` (≥ 0.2.0) qui
+            # émet une ligne INFO « .env chargé depuis <abs> : N posée(s) »
+            # côté Crystal — donne le bon signal sans afficher de secrets,
+            # et reflète l'état effectivement vu par le binaire (alors que
+            # l'ancien dump shell pouvait diverger en cas de mauvais cwd).
 
             # Supprimer l'ancien socket si présent (arrêt brutal précédent)
             rm -f "${#{rc_name}_socket}"
@@ -253,24 +257,11 @@ module Deploy
             fi
         }
 
-        # Journalise le contenu du .env dans le fichier de log (mots de passe masqués)
-        _log_env() {
-            ENV_FILE="${#{rc_name}_dotenv}"
-            LOG_FILE="${#{rc_name}_log}"
-            if [ -f "${ENV_FILE}" ]; then
-                echo "--- .env chargé au démarrage ($(date)) ---" >> "${LOG_FILE}"
-                # IMPORTANT : `sed -E` (extended regex) pour que l'alternation
-                # `|` fonctionne aussi sur BSD sed (FreeBSD, macOS) — le
-                # `\\|` de la regex basique est traité comme un littéral
-                # par BSD sed et ne masquerait JAMAIS les secrets.
-                grep -v '^[[:space:]]*#' "${ENV_FILE}" | grep -v '^[[:space:]]*$' | \\
-                    sed -E 's/(PASSWORD|SECRET|TOKEN|API_KEY|APP_PASSWORD|PASS)([^=]*)=.*/\\1\\2=***/' | \\
-                    while IFS= read -r line; do
-                        echo "  ${line}" >> "${LOG_FILE}"
-                    done
-                echo "--- fin .env ---" >> "${LOG_FILE}"
-            fi
-        }
+        # Note : la fonction _log_env (qui dumpait shared/.env dans le
+        # log au démarrage) a été retirée en 0.1.17. C'est désormais
+        # `aloli-crystal/load-env` (≥ 0.2.0) qui logue le chargement
+        # côté Crystal — donne le bon signal sans afficher de secrets,
+        # et reflète l'état EFFECTIVEMENT vu par le binaire.
 
         load_rc_config "${name}"
         run_rc_command "$1"

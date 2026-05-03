@@ -3,6 +3,22 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.17 — 2026-05-03
+
+=== Removed
+
+* **Le wrapper rc.d ne dump plus le contenu du `.env` dans le log au
+  démarrage** (`_log_env` shell + appel dans `_start`). Cette sortie
+  était trompeuse : elle affichait le `.env` brut côté wrapper alors
+  que le binaire ne voyait pas forcément ces valeurs (cf. 0.1.16, cas
+  `env_exports.sh` figé).
++
+*Remplacement* : c'est désormais `aloli-crystal/load-env` (≥ 0.2.0)
+qui logue côté Crystal une ligne `INFO` discrète : chemin résolu
+absolu + nombre de variables posées + nombre ignorées. Aucune clé,
+aucune valeur — pas de fuite de secret. Et le log reflète l'état
+*effectivement vu par le binaire*, pas une approximation côté shell.
+
 == v0.1.16 — 2026-05-03
 
 === Changed (BREAKING for runtime, transparent at deploy time)
