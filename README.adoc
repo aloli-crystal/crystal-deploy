@@ -54,6 +54,50 @@ shards build deploy
 
 NOTE: The `deploy` binary must be compiled in your project (not in the shard). It reads `config/deploy.yml` from the current directory.
 
+== Server prerequisites (FreeBSD, ONCE per machine)
+
+Independent from any app: these two steps fix a classic OpenSSL pkg
+pitfall on FreeBSD that would crash *every* Crystal app on its first
+outgoing HTTPS call.
+
+[source,sh]
+----
+# 1. Mozilla CA bundle (without it, outgoing HTTPS fails)
+sudo pkg install -y ca_root_nss
+sudo ln -sf /usr/local/share/certs/ca-root-nss.crt /etc/ssl/cert.pem
+
+# 2. Symlink so binaries linked against /usr/local/lib/libssl.so
+#    (pkg OpenSSL) can also find the bundle. Without this, the binary
+#    only reads the OPENSSLDIR baked into the pkg (typically
+#    /usr/local/openssl/), which doesn't contain cert.pem →
+#    SSL_connect: certificate verify failed.
+sudo mkdir -p /usr/local/openssl
+sudo ln -sf /etc/ssl/cert.pem /usr/local/openssl/cert.pem
+----
+
+Verification:
+
+[source,sh]
+----
+openssl version -d                                   # → OPENSSLDIR: "/etc/ssl"
+openssl s_client -connect eu.api.ovh.com:443 \\
+  -servername eu.api.ovh.com < /dev/null 2>&1 | grep "verify return"
+# → verify return:1 at every depth
+----
+
+Typical symptom if step 2 is missing (real-world case: `aloli-crystal/api-ovh`
+SMS credit polling):
+
+[source]
+----
+SSL_connect: error:0A000086:SSL routines::certificate verify failed (OpenSSL::SSL::Error)
+----
+
+CAUTION: `openssl version -d` shows `/etc/ssl` (= OPENSSLDIR of the CLI),
+but the Crystal binary may be linked against `/usr/local/lib/libssl.so`
+which has a different OPENSSLDIR baked. Check with `ldd /path/to/binary | grep -i ssl`
+and symlink accordingly.
+
 == Configuration
 
 Copy the example file to your project:
