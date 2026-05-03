@@ -10,43 +10,30 @@ describe Deploy::SSH::RemoteScript, "non-régression" do
   # les variables héritées dont les noms commencent par '_' ou d'autres caractères
   # non-alphabétiques, ce qui lève "Nom de variable incorrect".
   # Correction : script wrapper avec 'export KEY=VALUE' exécuté directement.
-  it "run_with_env utilise env_exports.sh pré-généré par Crystal (pas de parsing shell)" do
+  # Depuis 0.1.16 : single source of truth = `shared/.env`. Le binaire
+  # applicatif lit lui-même son `./.env` via `aloli-crystal/load-env`,
+  # plus de copie dans un `env_exports.sh`. `run_with_env` se contente
+  # désormais d'un cd + eval dans un sous-shell.
+  it "run_with_env fait un cd + eval dans un sous-shell, plus de env_exports.sh" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = Deploy::SSH::RemoteScript.generate(config, env)
-    # Utilise un script wrapper exécuté directement par /bin/sh
-    content.should contain("_RWE_WRAPPER")
-    # Copie env_exports.sh dans le wrapper (pas de parsing shell du .env)
-    content.should contain("env_exports.sh")
-    content.should contain("cat \"${_ENV_EXPORTS}\"")
-    # Ne doit PAS parser le .env en shell
-    content.should_not contain("sudo su \"${_RWE_USER}\"")
+    # cd dans le DIR demandé puis eval de la commande
+    content.should contain("cd \"${_RWE_DIR}\" && eval")
+    # Plus aucune référence à env_exports.sh
+    content.should_not contain("env_exports.sh")
+    # Plus aucun `set -a` (chargement automatique du .env en shell)
     code_lines = content.lines.reject { |l| l.strip.starts_with?("#") }
     code_lines.join("\n").should_not contain("set -a")
   end
 
-  # Le script wrapper doit etre executable par APP_USER (chmod 755)
-  it "run_with_env utilise chmod 755 sur le script wrapper" do
+  it "run_with_env exécute en sous-shell (parenthèses)" do
     config = SpecHelper.marten_config
     env = SpecHelper.dev_env(config)
     content = Deploy::SSH::RemoteScript.generate(config, env)
-    content.should contain("chmod 755")
-  end
-
-  # Le filtrage des commentaires/lignes vides est fait par Crystal (EnvParser),
-  # plus par le shell. run_with_env utilise env_exports.sh pré-généré.
-  it "run_with_env utilise env_exports.sh sans parser le .env en shell" do
-    config = SpecHelper.marten_config
-    env = SpecHelper.dev_env(config)
-    content = Deploy::SSH::RemoteScript.generate(config, env)
-    content.should contain("env_exports.sh")
-    # Ne doit plus parser le .env en shell dans run_with_env
-    rwe_start = content.index("run_with_env() {")
-    rwe_end = content.index("init_user() {") || content.index("create_database() {")
-    if rwe_start && rwe_end
-      rwe_body = content[rwe_start...rwe_end]
-      rwe_body.should_not contain("grep -v")
-    end
+    # Le sous-shell `( ... )` isole le cd : pas de side-effect sur le
+    # répertoire courant du shell appelant.
+    content.should match(/\(\s*cd\s+"\$\{_RWE_DIR\}"\s+&&\s+eval/)
   end
 
   # Régression : run_migrations utilisait ./bin/${APP_FULL_NAME} migrate.
@@ -233,7 +220,9 @@ describe Deploy::SSH::RemoteScript, "non-régression" do
       decoded.should contain(". /etc/rc.subr")
       decoded.should contain("run_rc_command")
       decoded.should contain("_generate_wrapper")
-      decoded.should contain("env_exports.sh")
+      # Depuis 0.1.16 : plus de env_exports.sh, le wrapper fait juste cd + exec.
+      decoded.should_not contain("env_exports.sh")
+      decoded.should contain("APP_DIR=\"${APP_HOME}/current\"")
     end
   end
 

@@ -3,6 +3,58 @@
 :toc-title: Versions
 :toclevels: 2
 
+== v0.1.16 — 2026-05-03
+
+=== Changed (BREAKING for runtime, transparent at deploy time)
+
+* **Single source of truth pour les variables d'environnement = `shared/.env`.**
+  Le wrapper rc.d ne copie plus un `env_exports.sh` figé : il fait
+  désormais `cd ${APP_HOME}/current` puis `exec ${APP_BIN}`. Le binaire
+  applicatif lit lui-même son `./.env` (symlink vers `shared/.env`) via
+  `aloli-crystal/load-env`.
++
+*Bénéfice utilisateur* : éditer le `.env` distant à la main + redémarrer
+le service (`service NAME restart`) suffit. Plus besoin de re-faire un
+`bin/deploy init ENV` pour régénérer un fichier shell intermédiaire.
++
+*Bénéfice sécurité* : les variables sensibles (passwords, API keys) ne
+sont plus visibles via `procstat env <PID>`. Elles ne sont lues qu'en
+mémoire par le binaire ; un autre user du système ne peut plus les voir.
++
+*Préparation au futur* : un `.env` chiffré (sops, age) deviendra trivial
+à intégrer — le wrapper peut simplement décrypter `shared/.env.age`
+en mémoire avant `exec`, sans rien d'autre à toucher.
+
+=== Removed
+
+* `Deploy::SSH::RemoteRunner#generate_env_exports` (méthode privée) —
+  ne servait qu'à uploader `env_exports.sh`, plus utile.
+* Génération de `env_exports.sh` dans le script remote (`generate_env_exports`
+  shell + appels associés dans `init` et `deploy`).
+* `Deploy::EnvParser.generate_exports` reste exposée pour rétrocompat
+  mais n'est plus appelée par le shard lui-même.
+
+=== Internal
+
+* `run_with_env DIR CMD` simplifié : `( cd "${_RWE_DIR}" && eval "${CMD}" )`
+  (sous-shell, plus de fichier wrapper temporaire).
+* Specs mises à jour (166 examples, 0 failure). Le test
+  `run_with_env utilise chmod 755 sur le script wrapper` est retiré
+  (devenu obsolète, plus de wrapper temp).
+
+=== Migration
+
+Pour les apps déjà déployées en 0.1.15 ou avant :
+
+. `shards update` côté projet pour récupérer la 0.1.16.
+. `bin/deploy ENV` (déploiement classique) → le nouveau rc.d est
+  installé, l'ancien `shared/env_exports.sh` est ignoré (peut être
+  supprimé à la main, c'est sans impact).
+. `service NAME restart` côté serveur (le rc.d a été régénéré, le
+  wrapper aussi).
+. Vérifier dans les logs : `procstat env <PID>` ne montre plus les
+  variables d'env, et l'app voit bien toutes les valeurs du `.env`.
+
 == v0.1.15 — 2026-05-02
 
 === Fixed

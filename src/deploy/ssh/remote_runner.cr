@@ -62,8 +62,10 @@ module Deploy
           @client.upload(tmp_script.path, remote_script)
           @client.upload(tmp_data.path, remote_data)
 
-          # Générer env_exports.sh depuis Crystal (aucun parsing shell du .env)
-          generate_env_exports
+          # Note : depuis 0.1.16, le binaire lit lui-même `shared/.env`
+          # via `aloli-crystal/load-env` (le wrapper rc.d fait `cd current/`
+          # avant `exec`). Plus de génération d'`env_exports.sh` côté
+          # Crystal — single source of truth = `shared/.env`.
 
           log_local "Lancement de la commande [#{@command}] sur #{@env.host}..."
           cmd = build_remote_command(remote_script, remote_data)
@@ -72,28 +74,6 @@ module Deploy
         ensure
           File.delete(tmp_script.path) rescue nil
           File.delete(tmp_data.path) rescue nil
-        end
-      end
-
-      # Lit le .env du serveur, le parse en Crystal, et uploade env_exports.sh
-      # avec des exports correctement échappés. Plus aucun parsing shell du .env.
-      private def generate_env_exports : Nil
-        app_home = @env.app_home(@config.app_name)
-        env_file = "#{app_home}/shared/.env"
-        exports_dest = "#{app_home}/shared/env_exports.sh"
-
-        env_content = @client.read_remote(env_file)
-        return unless env_content
-
-        exports = EnvParser.generate_exports(env_content)
-        tmp = File.tempfile("env-exports", ".sh")
-        begin
-          tmp.print(exports)
-          tmp.flush
-          tmp.close
-          @client.upload(tmp.path, exports_dest)
-        ensure
-          File.delete(tmp.path) rescue nil
         end
       end
 

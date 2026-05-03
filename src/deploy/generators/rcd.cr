@@ -6,15 +6,23 @@ module Deploy
     #
     # Architecture de démarrage :
     #   daemon(8) -o LOG_FILE → wrapper shell (shared/bin/<full-name>)
-    #                              ↳ charge shared/env_exports.sh (généré par Crystal)
+    #                              ↳ cd current/
     #                              ↳ exec binaire Crystal
     #
     # daemon(8) gère la redirection vers LOG_FILE (ouvert en tant que root
     # avant le changement d'UID vers deploy). Cela évite les problèmes de
     # permission sur shared/log/ qui appartient à deploy.
     #
-    # Le wrapper est (re)généré à chaque démarrage via precmd.
-    # Cela garantit que les variables d'environnement sont toujours à jour.
+    # Le wrapper est (re)généré à chaque démarrage via precmd. C'est un
+    # script trivial (cd + exec) qui ne touche plus aux variables d'env.
+    #
+    # Source des variables d'environnement : `shared/.env`, lu par le
+    # binaire lui-même via `aloli-crystal/load-env`. Single source of
+    # truth — l'éditeur d'un .env distant n'a qu'à `service ... restart`
+    # pour que les nouvelles valeurs prennent. Plus de re-init nécessaire.
+    #
+    # Le `cd` vers `current/` est ce qui permet à `LoadEnv.load` de
+    # trouver `./.env` (qui pointe sur `shared/.env` via symlink).
     #
     # REQUIRE: postgresql
     #   Assure que PostgreSQL est démarré avant ce service.
@@ -122,18 +130,20 @@ module Deploy
             _generate_wrapper
         }
 
-        # Génère shared/bin/#{full_name} :
-        # script shell nommé comme l'application pour apparaître clairement dans ps.
-        # Les exports sont générés par Crystal dans env_exports.sh au moment du deploy.
-        # Aucun parsing shell du .env — les caractères spéciaux sont gérés par Crystal.
+        # Génère shared/bin/#{full_name} : wrapper minimal qui place le
+        # cwd sur current/ puis exec le binaire. Le cwd est essentiel
+        # pour que `aloli-crystal/load-env` trouve `./.env` (symlink
+        # vers shared/.env). Aucun export shell : c'est le binaire qui
+        # lit le .env, single source of truth.
+        # Le nom du fichier (= APP_FULL_NAME) le fait apparaître
+        # clairement dans `ps`.
         _generate_wrapper() {
             WRAPPER="${#{rc_name}_wrapper}"
-            ENV_EXPORTS="${APP_HOME}/shared/env_exports.sh"
+            APP_DIR="${APP_HOME}/current"
             printf '#!/bin/sh\\n' > "${WRAPPER}"
             printf '# Wrapper de démarrage — #{full_name}\\n' >> "${WRAPPER}"
             printf '# Généré automatiquement par rc.d — ne pas modifier manuellement.\\n' >> "${WRAPPER}"
-            # Copier les exports pré-générés par Crystal (pas de parsing shell)
-            [ -f "${ENV_EXPORTS}" ] && cat "${ENV_EXPORTS}" >> "${WRAPPER}"
+            printf 'cd %s || exit 1\\n' "'${APP_DIR}'" >> "${WRAPPER}"
             printf 'exec %s\\n' "'${APP_BIN}'" >> "${WRAPPER}"
             chmod 750 "${WRAPPER}"
             chown "${#{rc_name}_user}:${#{rc_name}_group}" "${WRAPPER}"

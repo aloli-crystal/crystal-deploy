@@ -144,28 +144,16 @@ module Deploy
 
         # ---------------------------------------------------------------------------
         # run_with_env DIR CMD...
-        # Exécute CMD depuis DIR avec les variables d'environnement chargées.
-        # Le premier argument (USER) est conservé par compatibilité mais ignoré.
-        #
-        # Les exports sont générés par Crystal (env_exports.sh) et copiés
-        # dans le wrapper — aucun parsing shell du .env.
+        # Exécute CMD depuis DIR. Le binaire applicatif lit lui-même
+        # `./.env` via `aloli-crystal/load-env` — pas besoin de pré-charger
+        # quoi que ce soit côté shell. Le premier argument (USER) est
+        # conservé par compatibilité mais ignoré.
         # ---------------------------------------------------------------------------
         run_with_env() {
           _RWE_DIR="$2"
           shift 2
           _RWE_CMD="$*"
-          _RWE_WRAPPER=$(mktemp /tmp/.rwe_wrapper.XXXXXX)
-          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
-          printf '#!/bin/sh\n' > "${_RWE_WRAPPER}"
-          printf 'cd %s || exit 1\n' "${_RWE_DIR}" >> "${_RWE_WRAPPER}"
-          # Copier les exports pré-générés par Crystal (pas de parsing shell)
-          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_RWE_WRAPPER}"
-          printf '%s 2>&1\n' "${_RWE_CMD}" >> "${_RWE_WRAPPER}"
-          chmod 755 "${_RWE_WRAPPER}"
-          /bin/sh "${_RWE_WRAPPER}"
-          _RWE_STATUS=$?
-          rm -f "${_RWE_WRAPPER}"
-          return ${_RWE_STATUS}
+          ( cd "${_RWE_DIR}" && eval "${_RWE_CMD}" 2>&1 )
         }
 
         # ==========================================================================
@@ -908,45 +896,20 @@ module Deploy
           log_info "Lien current → ${RELEASE_DIR}"
         }
 
-        # Génère env_exports.sh à partir du .env.
-        # Chaque ligne CLÉ=valeur est convertie en export CLÉ='valeur'.
-        # Appelée au deploy AVANT generate_wrapper.
-        generate_env_exports() {
-          _ENV_FILE="${SHARED_DIR}/.env"
-          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
-          if [ ! -f "${_ENV_FILE}" ]; then
-            log_warn "Pas de .env — env_exports.sh non généré."
-            return 0
-          fi
-          : > "${_ENV_EXPORTS}"
-          while IFS= read -r _line || [ -n "${_line}" ]; do
-            case "${_line}" in
-              ""|\#*) continue ;;
-            esac
-            _key="${_line%%=*}"
-            _val="${_line#*=}"
-            case "${_val}" in
-              \"*\") _val="${_val%\"}"; _val="${_val#\"}" ;;
-              \'*\') _val="${_val%\'}"; _val="${_val#\'}" ;;
-            esac
-            printf "export %s='%s'\n" "${_key}" "${_val}" >> "${_ENV_EXPORTS}"
-          done < "${_ENV_FILE}"
-          sudo chmod 640 "${_ENV_EXPORTS}"
-          sudo chown "${APP_USER}:${APP_GROUP}" "${_ENV_EXPORTS}"
-          log_info "env_exports.sh généré ($(wc -l < "${_ENV_EXPORTS}") variables)."
-        }
-
-        # Génère le wrapper de démarrage à partir de env_exports.sh.
-        # Appelée au deploy AVANT start_service — ne dépend pas du rc.d precmd.
+        # Génère le wrapper de démarrage : script trivial cd + exec.
+        # Appelée au deploy AVANT start_service. Le binaire lit lui-même
+        # `./.env` via `aloli-crystal/load-env` (cwd = current/) — single
+        # source of truth = `shared/.env`, plus aucune copie shell.
+        # Note : le rc.d generation (rcd.cr) regénère le même fichier
+        # à chaque start (precmd) ; cette fonction est utile au tout
+        # premier deploy avant que le rc.d ne soit installé/démarré.
         generate_wrapper() {
           _WRAPPER="${SHARED_DIR}/bin/${APP_FULL_NAME}"
-          _ENV_EXPORTS="${SHARED_DIR}/env_exports.sh"
           sudo mkdir -p "${SHARED_DIR}/bin"
           sudo chown "${APP_USER}:${APP_GROUP}" "${SHARED_DIR}/bin"
           _TMP=$(mktemp /tmp/.wrapper.XXXXXX)
           printf '#!/bin/sh\n' > "${_TMP}"
           printf '# Wrapper — %s (généré automatiquement)\n' "${APP_FULL_NAME}" >> "${_TMP}"
-          [ -f "${_ENV_EXPORTS}" ] && cat "${_ENV_EXPORTS}" >> "${_TMP}"
           printf 'cd %s || exit 1\n' "'${CURRENT_LINK}'" >> "${_TMP}"
           printf 'exec %s\n' "'${CURRENT_LINK}/bin/${APP_FULL_NAME}'" >> "${_TMP}"
           sudo cp "${_TMP}" "${_WRAPPER}"
@@ -1121,7 +1084,6 @@ module Deploy
             # init_rcd doit être appelé APRES activate_release :
             # le script rc.d est dans current/config/ qui vient d'être créé.
             init_rcd
-            generate_env_exports
             generate_wrapper
             start_service
             reload_nginx
@@ -1174,7 +1136,6 @@ module Deploy
             compile_wait
             activate_release
             init_rcd
-            generate_env_exports
             generate_wrapper
             start_service
             reload_nginx

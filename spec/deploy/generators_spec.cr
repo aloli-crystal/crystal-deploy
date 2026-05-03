@@ -64,18 +64,20 @@ describe Deploy::Generators::Rcd do
     content.should contain("rcvar=\"${name}_enable\"")
   end
 
-  it "génère un wrapper shell qui charge le .env avant de lancer le binaire" do
+  it "génère un wrapper shell qui place le cwd sur current/ avant exec (single source = .env via load-env)" do
     config, env = sample_config_and_env
     gen = Deploy::Generators::Rcd.new(config, env)
     content = gen.generate
     # La fonction _generate_wrapper doit être présente
     content.should contain("_generate_wrapper")
-    # Le wrapper copie env_exports.sh pré-généré par Crystal
-    content.should contain("env_exports.sh")
+    # Le wrapper place le cwd sur current/ pour que load-env trouve ./.env
+    content.should contain(%(APP_DIR="${APP_HOME}/current"))
+    content.should contain(%(printf 'cd %s || exit 1))
+    # Pas de copie d'env_exports.sh — single source of truth = shared/.env
+    content.should_not contain("env_exports.sh")
     content.should_not contain("set -a")
-    # daemon(8) doit lancer le wrapper, pas le binaire directement
+    # daemon(8) lance le wrapper, qui à son tour exec le binaire
     content.should contain("mon_app__developpement_wrapper")
-    # Le wrapper est dans shared/bin/
     content.should contain("shared/bin/mon-app--developpement")
   end
 
