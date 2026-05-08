@@ -78,6 +78,41 @@ module Deploy
         exit 0
       end
 
+      # UX standard `deploy help [<sub>]` — cf. note mémoire ALOLI
+      # `feedback_cli_help_subcommand.md`. Sans argument c'est l'aide
+      # globale (synonyme de `--help`). Avec argument on imprime
+      # l'aide globale ET on signale la section pertinente. Refus
+      # explicite des sous-commandes inconnues.
+      if args.first? == "help"
+        sub = args[1]?
+        if sub.nil? || sub.empty?
+          puts USAGE
+          exit 0
+        end
+        valid_subs = %w(init deploy rollback status generate-ci dns-setup)
+        unless valid_subs.includes?(sub.downcase)
+          STDERR.puts "Aide indisponible pour « #{sub} » (sous-commandes : #{valid_subs.join(", ")})."
+          STDERR.puts "Utilisez `deploy help` pour l'aide globale."
+          exit 1
+        end
+        puts USAGE
+        puts ""
+        puts "─── Focus : #{sub} ───"
+        # Trouver la ligne « <sub>  description » dans la section
+        # « Commandes » et imprimer un extrait.
+        USAGE.lines.each_with_index do |line, i|
+          stripped = line.lstrip
+          if stripped.starts_with?("#{sub} ") || stripped.starts_with?("#{sub}  ")
+            puts line.rstrip
+            # Inclure la ligne suivante si c'est une suite indentée
+            nxt = USAGE.lines[i + 1]?
+            puts nxt.rstrip if nxt && nxt.lstrip != nxt && !nxt.lstrip.empty?
+            break
+          end
+        end
+        exit 0
+      end
+
       # Sans config/deploy.yml local on n'a rien à déployer : on imprime
       # l'aide et on génère un gabarit pour amorcer un nouveau projet.
       # Toute autre invocation tombe sur la commande `deploy` par défaut
